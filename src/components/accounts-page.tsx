@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, Plus, Users, ArrowUpRight, ArrowDownRight, Edit2, FileText, Trash2, MoreHorizontal, Filter, Download, CheckCircle2 } from "lucide-react"
+import { Search, Plus, Users, ArrowUpRight, ArrowDownRight, Edit2, FileText, Trash2, MoreHorizontal, Filter, Download, CheckCircle2, CheckSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -58,6 +59,15 @@ export function AccountsPage() {
   }, [selectedAccountId, accounts]) // sync with store changes too
 
   const hasChanges = JSON.stringify(stagedLedger) !== JSON.stringify(originalLedger)
+
+  // Advanced Export State
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [isAdvancedExportModalOpen, setIsAdvancedExportModalOpen] = useState(false)
+  const [exportFilterFrom, setExportFilterFrom] = useState("")
+  const [exportFilterTo, setExportFilterTo] = useState("")
+  const [exportFilterType, setExportFilterType] = useState<"all" | "bill" | "payment">("all")
+
   // Empty line states for ledger
   const [entryDate, setEntryDate] = useState(() => {
     const today = new Date()
@@ -237,7 +247,7 @@ export function AccountsPage() {
   const totalLedgerNet = sortedLedger.reduce((sum, e) => sum + (e.netAmount || 0), 0)
   const totalLedgerPayment = sortedLedger.reduce((sum, e) => sum + (e.payment || 0), 0)
 
-  const generateLedgerPDF = async () => {
+  const generateLedgerPDF = async (entriesToExport: LedgerEntry[] = sortedLedger) => {
     if (!selectedAccount || !selectedAccountId) return
 
     const { jsPDF } = await import("jspdf")
@@ -266,56 +276,97 @@ export function AccountsPage() {
     const today = new Date().toLocaleDateString("en-IN")
     doc.text(`Generated: ${today}`, 140, 30)
 
+    const exportLedgerAmount = entriesToExport.reduce((sum, e) => sum + (e.amount || 0), 0)
+    const exportLedgerDiscount = entriesToExport.reduce((sum, e) => sum + (e.discount || 0), 0)
+    const exportLedgerTax = entriesToExport.reduce((sum, e) => sum + (e.taxOrPaid || 0), 0)
+    const exportLedgerNet = entriesToExport.reduce((sum, e) => sum + (e.netAmount || 0), 0)
+    const exportLedgerPayment = entriesToExport.reduce((sum, e) => sum + (e.payment || 0), 0)
+    const finalNetBalance = exportLedgerNet - exportLedgerPayment
+
     // Format Data matching screenshot strictly
-    const tableData = sortedLedger.map(entry => {
+    const tableData: any[] = []
+    
+    // Auto-opening balance removed as per request.
+
+    entriesToExport.forEach(entry => {
       const partyStr = entry.type === "payment" && entry.paymentMode 
         ? `${entry.paymentMode} - ${entry.party}` 
         : entry.party || ""
         
-      return [
-        entry.date,
+      tableData.push([
+        new Date(entry.date).toLocaleDateString('en-GB'),
         partyStr,
+        entry.station || "",
         entry.amount ? formatCurrency(entry.amount).replace('₹','') : "",
         entry.discount ? `-${formatCurrency(entry.discount).replace('₹','')}` : "",
         entry.taxOrPaid ? formatCurrency(entry.taxOrPaid).replace('₹','') : "",
         entry.netAmount ? formatCurrency(entry.netAmount).replace('₹','') : "",
         entry.items || "",
         entry.payment ? formatCurrency(entry.payment).replace('₹','') : ""
-      ]
+      ])
     })
 
     autoTable(doc, {
       startY: 45,
-      head: [['Date', 'Party', 'Amount', 'Discount', 'Tax/Paid', 'Net Amount', 'ITEMS', 'Payment']],
+      head: [['Date', 'Party', 'Station', 'Amount', 'Discount', 'Tax/Paid', 'Net Amount', 'ITEMS', 'Payment']],
       body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center', lineWidth: 0.5, lineColor: [0, 0, 0] },
-      bodyStyles: { textColor: [0, 0, 0], lineColor: [0, 0, 0] },
+      headStyles: { 
+        fillColor: [255, 255, 255], 
+        textColor: [0, 0, 0], 
+        fontStyle: 'bold', 
+        halign: 'center', 
+        lineWidth: 0.5, 
+        lineColor: [0, 0, 0] 
+      },
+      bodyStyles: { 
+        textColor: [0, 0, 0], 
+        lineColor: [0, 0, 0],
+        fontSize: 9
+      },
       columnStyles: {
-        0: { halign: 'center' },
-        2: { halign: 'right' },
-        3: { halign: 'right' },
-        4: { halign: 'right' },
-        5: { halign: 'right' },
-        7: { halign: 'right' }
+        0: { halign: 'center', cellWidth: 22 }, // Date
+        1: { halign: 'left' },                 // Party
+        2: { halign: 'center' },               // Station
+        3: { halign: 'right' },                // Amount
+        4: { halign: 'right' },                // Discount
+        5: { halign: 'right' },                // Tax/Paid
+        6: { halign: 'right', fontStyle: 'bold' }, // Net Amount
+        7: { halign: 'center' },               // Items
+        8: { halign: 'right', fontStyle: 'bold' }  // Payment
+      },
+      didParseCell: (data) => {
+        // Style 'OLD BALANCE' rows with yellow highlight
+        const partyCell = data.row.cells[1]?.text?.[0] || ""
+        if (partyCell.toUpperCase().includes("OLD BALANCE") || partyCell.toUpperCase().includes("OPENING BALANCE")) {
+          data.cell.styles.fillColor = [255, 255, 0] // Yellow
+          data.cell.styles.fontStyle = 'bold'
+        }
       },
       foot: [
         [
           '', 
           '', 
-          totalLedgerAmount ? formatCurrency(totalLedgerAmount).replace('₹','') : "", 
-          totalLedgerDiscount ? `-${formatCurrency(totalLedgerDiscount).replace('₹','')}` : "", 
-          totalLedgerTax ? formatCurrency(totalLedgerTax).replace('₹','') : "", 
-          totalLedgerNet ? formatCurrency(totalLedgerNet).replace('₹','') : "", 
+          'TOTAL',
+          exportLedgerAmount ? formatCurrency(exportLedgerAmount).replace('₹','') : "", 
+          exportLedgerDiscount ? `-${formatCurrency(exportLedgerDiscount).replace('₹','')}` : "", 
+          exportLedgerTax ? formatCurrency(exportLedgerTax).replace('₹','') : "", 
+          exportLedgerNet ? formatCurrency(exportLedgerNet).replace('₹','') : "", 
           '', 
-          totalLedgerPayment ? formatCurrency(totalLedgerPayment).replace('₹','') : ""
+          exportLedgerPayment ? formatCurrency(exportLedgerPayment).replace('₹','') : ""
         ],
         [
-          { content: 'NET BALANCE:', colSpan: 4, styles: { halign: 'center', fontSize: 16, fontStyle: 'bold' } },
-          { content: formatCurrency(Math.abs(selectedAccount.balance)).replace('₹',''), colSpan: 4, styles: { halign: 'right', fontSize: 16, fontStyle: 'bold' } }
+          { content: 'NET BALANCE:', colSpan: 6, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 5 } },
+          { content: formatCurrency(finalNetBalance).replace('₹',''), colSpan: 3, styles: { halign: 'right', fontSize: 24, fontStyle: 'bold', cellPadding: 5 } }
         ]
       ],
-      footStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.5, lineColor: [0, 0, 0] }
+      footStyles: { 
+        fillColor: [255, 255, 255], 
+        textColor: [0, 0, 0], 
+        fontStyle: 'bold', 
+        lineWidth: 0.5, 
+        lineColor: [0, 0, 0] 
+      }
     })
 
     const safeFilename = `${selectedAccount.name}_Ledger`.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -329,6 +380,41 @@ export function AccountsPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  const handleExportSelectedRows = () => {
+    if (selectedRowIds.size === 0) {
+      toast.error("Please select at least one row to export")
+      return
+    }
+    const entriesToExport = sortedLedger.filter(e => selectedRowIds.has(e.id))
+    generateLedgerPDF(entriesToExport)
+    setIsSelectionMode(false)
+    setSelectedRowIds(new Set())
+  }
+
+  const handleAdvancedExport = () => {
+    let filtered = [...sortedLedger]
+    
+    if (exportFilterFrom) {
+      filtered = filtered.filter(e => new Date(e.date) >= new Date(exportFilterFrom))
+    }
+    if (exportFilterTo) {
+      filtered = filtered.filter(e => new Date(e.date) <= new Date(exportFilterTo))
+    }
+    if (exportFilterType === 'bill') {
+      filtered = filtered.filter(e => e.type === 'bill')
+    } else if (exportFilterType === 'payment') {
+      filtered = filtered.filter(e => e.type === 'payment')
+    }
+
+    if (filtered.length === 0) {
+      toast.error("No entries match the selected filters")
+      return
+    }
+
+    generateLedgerPDF(filtered)
+    setIsAdvancedExportModalOpen(false)
   }
 
   return (
@@ -482,10 +568,39 @@ export function AccountsPage() {
                                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                   <Input placeholder="Filter by Party, Date..." value={ledgerSearch} onChange={(e) => setLedgerSearch(e.target.value)} className="pl-9 h-10 w-full sm:w-64 rounded-xl bg-background border-border" />
                                 </div>
-                                <Button onClick={generateLedgerPDF} variant="outline" className="h-10 px-3 sm:px-4 rounded-xl border-dashed shrink-0 hover:bg-muted">
-                                  <Download className="w-4 h-4 sm:mr-2" />
-                                  <span className="hidden sm:inline">Export PDF</span>
-                                </Button>
+                                
+                                {isSelectionMode ? (
+                                  <>
+                                    <Button onClick={handleExportSelectedRows} variant="default" className="h-10 px-3 sm:px-4 rounded-xl shadow-lg">
+                                      Export Selected ({selectedRowIds.size})
+                                    </Button>
+                                    <Button onClick={() => { setIsSelectionMode(false); setSelectedRowIds(new Set()); }} variant="ghost" className="h-10 px-3 rounded-xl border border-border">
+                                      Cancel
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button onClick={() => generateLedgerPDF()} variant="outline" className="h-10 px-3 sm:px-4 rounded-xl border-dashed shrink-0 hover:bg-muted">
+                                      <Download className="w-4 h-4 sm:mr-2" />
+                                      <span className="hidden sm:inline">Export PDF</span>
+                                    </Button>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-muted shrink-0 border border-transparent">
+                                          <MoreHorizontal className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-56 rounded-xl">
+                                        <DropdownMenuItem onClick={() => setIsAdvancedExportModalOpen(true)} className="rounded-lg gap-2 cursor-pointer">
+                                          <Filter className="w-4 h-4" /> Advanced Filter Export
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setIsSelectionMode(true)} className="rounded-lg gap-2 cursor-pointer">
+                                          <CheckSquare className="w-4 h-4" /> Select Rows to Export
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -494,6 +609,20 @@ export function AccountsPage() {
                               <table className="w-full text-sm min-w-[1000px]">
                                 <thead className="bg-muted sticky top-0 z-10 shadow-sm border-b border-border">
                                   <tr>
+                                    {isSelectionMode && (
+                                      <th className="p-3 text-center min-w-[50px]">
+                                        <Checkbox 
+                                          checked={selectedRowIds.size === sortedLedger.length && sortedLedger.length > 0}
+                                          onCheckedChange={(checked) => {
+                                            if (checked) {
+                                              setSelectedRowIds(new Set(sortedLedger.map(e => e.id)))
+                                            } else {
+                                              setSelectedRowIds(new Set())
+                                            }
+                                          }}
+                                        />
+                                      </th>
+                                    )}
                                     <th className="p-3 text-left font-semibold text-foreground min-w-32">DATE</th>
                                     <th className="p-3 text-left font-semibold text-foreground min-w-40">INVOICE NO / PARTY</th>
                                     <th className="p-3 text-left font-semibold text-foreground min-w-32">STATION</th>
@@ -508,7 +637,20 @@ export function AccountsPage() {
                                 </thead>
                                 <tbody>
                                   {sortedLedger.map((entry, idx) => (
-                                    <tr key={idx} className="border-b border-border/50 hover:bg-muted/10 transition-colors">
+                                    <tr key={entry.id || idx} className={cn("border-b border-border/50 transition-colors", selectedRowIds.has(entry.id) ? "bg-primary/5" : "hover:bg-muted/10")}>
+                                      {isSelectionMode && (
+                                        <td className="p-3 text-center">
+                                          <Checkbox 
+                                            checked={selectedRowIds.has(entry.id)}
+                                            onCheckedChange={(checked) => {
+                                              const newSet = new Set(selectedRowIds)
+                                              if (checked) newSet.add(entry.id)
+                                              else newSet.delete(entry.id)
+                                              setSelectedRowIds(newSet)
+                                            }}
+                                          />
+                                        </td>
+                                      )}
                                       <td className="p-3 font-mono text-xs">
                                         {new Date(entry.date).toLocaleDateString('en-GB')}
                                       </td>
@@ -554,7 +696,7 @@ export function AccountsPage() {
 
                                   {/* Input Row for New/Edit */}
                                   <tr className="border-t border-border bg-muted/80">
-                                    <td colSpan={10} className="p-3">
+                                    <td colSpan={isSelectionMode ? 11 : 10} className="p-3">
                                       <div className="flex flex-wrap gap-4 items-center">
                                         <span className="text-sm font-semibold text-foreground">Entry Controls:</span>
                                         <div className="flex gap-2">
@@ -572,6 +714,7 @@ export function AccountsPage() {
                                   </tr>
 
                                   <tr className={cn("border-t-2 border-primary/20", editingEntryId ? "bg-primary/5" : "bg-muted/10")}>
+                                    {isSelectionMode && <td className="p-2"></td>}
                                     <td className="p-2"><Input type="date" value={entryDate ?? ''} onChange={(e) => setEntryDate(e.target.value)} className="h-9 w-32 text-xs" /></td>
                                     <td className="p-2">
                                       <Input placeholder="Inv No / Name" value={entryParty ?? ''} onChange={(e) => setEntryParty(e.target.value)} className="h-9 w-full min-w-32 text-xs" />
@@ -635,7 +778,65 @@ export function AccountsPage() {
                                     ₹ {Math.abs(currentStagedBalance).toLocaleString('en-IN')}
                                   </span>
                                 </div>
-                              </div>
+                            </div>
+
+                            <Dialog open={isAdvancedExportModalOpen} onOpenChange={setIsAdvancedExportModalOpen}>
+                              <DialogContent className="sm:max-w-[425px] rounded-2xl">
+                                <DialogHeader>
+                                  <DialogTitle>Advanced Export</DialogTitle>
+                                  <DialogDescription>
+                                    Filter ledger entries before exporting to PDF.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-6 py-4">
+                                  <div className="space-y-3">
+                                    <label className="text-sm font-semibold">Date Range</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <div className="space-y-1.5">
+                                        <label className="text-xs text-muted-foreground">From</label>
+                                        <Input type="date" value={exportFilterFrom} onChange={(e) => setExportFilterFrom(e.target.value)} className="rounded-xl h-10" />
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <label className="text-xs text-muted-foreground">To</label>
+                                        <Input type="date" value={exportFilterTo} onChange={(e) => setExportFilterTo(e.target.value)} className="rounded-xl h-10" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="space-y-3">
+                                    <label className="text-sm font-semibold">Transaction Type</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                      <Button 
+                                        variant={exportFilterType === 'all' ? 'default' : 'outline'} 
+                                        onClick={() => setExportFilterType('all')}
+                                        className="rounded-lg h-9 text-xs"
+                                      >
+                                        All
+                                      </Button>
+                                      <Button 
+                                        variant={exportFilterType === 'bill' ? 'default' : 'outline'} 
+                                        onClick={() => setExportFilterType('bill')}
+                                        className="rounded-lg h-9 text-xs"
+                                      >
+                                        Bills Only
+                                      </Button>
+                                      <Button 
+                                        variant={exportFilterType === 'payment' ? 'default' : 'outline'} 
+                                        onClick={() => setExportFilterType('payment')}
+                                        className="rounded-lg h-9 text-xs"
+                                      >
+                                        Payments Only
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => setIsAdvancedExportModalOpen(false)} className="rounded-xl h-10 px-4">Cancel</Button>
+                                  <Button onClick={handleAdvancedExport} className="rounded-xl h-10 px-6">Generate PDF</Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+
                           </DialogContent>
                         </Dialog>
                         
