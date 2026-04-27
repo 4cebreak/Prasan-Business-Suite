@@ -6,8 +6,9 @@ A professional business suite for jeans manufacturing — accounting, invoicing,
 
 - 🏢 **Multi-Company** — Manage unlimited business entities with isolated data
 - 📊 **Dashboard** — Real-time revenue, accounts, and invoice analytics
-- 🧾 **Invoicing** — Create, track, and export invoices with aging indicators
-- 📒 **Ledger Management** — Full double-entry ledger with PDF export
+- 🧾 **Invoicing** — Create, track, and export professional invoices
+- 📒 **Ledger Management** — Professional double-entry ledgers with Excel-style PDF export
+- 📑 **Advanced PDF Export** — Filter by date, transaction type, or manually select rows to export
 - 🔒 **Password Protected** — SHA-256 hashed master password
 - 🗄️ **SQLite Database** — Permanent local storage via Prisma ORM
 
