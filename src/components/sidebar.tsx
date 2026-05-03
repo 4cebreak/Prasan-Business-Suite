@@ -9,8 +9,10 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Package,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useStore } from "@/lib/store"
 
 interface SidebarProps {
   activeTab: string
@@ -25,6 +27,12 @@ const navItems = [
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const { activeOrg } = useStore()
+  
+  const currentNavItems = [...navItems]
+  if (activeOrg?.inventoryEnabled) {
+    currentNavItems.push({ id: "inventory", label: "Inventory", icon: Package })
+  }
 
   return (
     <aside
@@ -51,7 +59,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 p-4">
         <div className="space-y-2">
-          {navItems.map((item) => {
+          {currentNavItems.map((item) => {
             const Icon = item.icon
             const isActive = activeTab === item.id
             return (

@@ -41,6 +41,7 @@
     "@radix-ui/react-tooltip": "1.2.8",
     "@vercel/analytics": "1.6.1",
     "autoprefixer": "^10.4.20",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -49,6 +50,7 @@
     "embla-carousel-react": "8.6.0",
     "framer-motion": "^12.38.0",
     "input-otp": "1.4.2",
+    "jose": "^6.2.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.564.0",
@@ -67,6 +69,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22",
     "@types/react": "^19",

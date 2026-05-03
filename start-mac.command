@@ -25,7 +25,11 @@ echo "✓ Node.js found: $(node -v)"
 if [ ! -f ".env" ]; then
     echo "📝 Creating .env configuration file..."
     echo 'DATABASE_URL="file:./dev.db"' > .env
+    # Generate a random 32-character secret
+    SECRET=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)
+    echo "SESSION_SECRET=\"$SECRET\"" >> .env
 fi
+
 
 # 2. Check for node_modules platform mismatch
 if [ -d "node_modules" ]; then
@@ -43,14 +47,10 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # 4. Database Setup
-if [ ! -f "dev.db" ]; then
-    echo "🗄️  Setting up database for the first time..."
-    npx prisma generate
-    npx prisma db push
-else
-    # Run generate anyway to ensure client is up to date
-    npx prisma generate &> /dev/null
-fi
+echo "🗄️  Checking database schema..."
+npx prisma generate &> /dev/null
+npx prisma db push --accept-data-loss &> /dev/null
+
 
 echo ""
 echo "🚀 Starting Prasan ERP..."

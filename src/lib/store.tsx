@@ -1,11 +1,12 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback } from "react"
 import { 
   fetchStoreContext, serverAddAccount, serverUpdateAccount, serverDeleteAccount, 
   serverAddLedgerEntry, serverUpdateLedgerEntry, serverDeleteLedgerEntry, serverAddInvoice, serverUpdateInvoice, serverDeleteInvoice, 
-  serverAddOrganization, serverUpdateOrganization, serverDeleteOrganization 
+  serverAddOrganization, serverUpdateOrganization, serverDeleteOrganization, serverAddRawMaterial, serverUpdateRawMaterial, serverDeleteRawMaterial, serverAddWIPGood, serverUpdateWIPGood, serverDeleteWIPGood, serverAddFinishedGood, serverUpdateFinishedGood, serverDeleteFinishedGood, serverPurgeInventory 
 } from "@/app/actions"
+import { toast } from "sonner"
 
 export interface LedgerEntry {
   id: string
@@ -20,12 +21,14 @@ export interface LedgerEntry {
   payment: number
   type: "bill" | "payment"
   paymentMode?: string
+  invoiceId?: string
 }
 
 export interface Account {
   id: string
   name: string
-  type: "Direct Agent" | "Agency"
+  category: "Customer" | "Supplier"
+  type: "Direct" | "Agency"
   station: string
   balance: number
   ledger: LedgerEntry[]
@@ -39,6 +42,7 @@ interface ItemRow {
   qty: number
   rate: number
   amount: number
+  finishedGoodId?: string
 }
 
 export interface Invoice {
@@ -49,6 +53,7 @@ export interface Invoice {
   agencyName: string
   city?: string
   transport?: string
+  transportCharges?: number
   remarks?: string
   marka?: string
   items: ItemRow[]
@@ -57,6 +62,8 @@ export interface Invoice {
   taxes: number
   grandTotal: number
   status: "paid" | "pending" | "overdue"
+  itemsDescription?: string
+  ledgerEntryId?: string
 }
 
 export interface OrgConfig {
@@ -67,18 +74,90 @@ export interface OrgConfig {
   address?: string
   city?: string
   state?: string
+  linkInvoicesLedgers?: boolean
+  linkInvoicesChanged?: boolean
+  inventoryEnabled?: boolean
+  strictInventoryInvoicing?: boolean
+  currency?: string
+  invoiceShowBrandName?: boolean
+  invoiceShowSize?: boolean
+  invoiceBrandNameLabel?: string
+  invoiceSizeLabel?: string
+  taxMode?: string
+  taxPercentage?: number
+}
+
+
+export interface RawMaterial {
+  id: string
+  date: string
+  name: string
+  type?: string
+  qty: number
+  qtyUsed?: number
+  remarks?: string
+  price: number
+  total: number
+  location?: string
+  invNo?: string
+  billerName?: string
+  supplierName?: string
+  ledgerEntryId?: string
+}
+
+export interface RawMaterialUsage {
+  id: string
+  wipId: string
+  name: string
+  qty: number
+  cost: number
+}
+
+export interface ManufacturingProcess {
+  id: string
+  wipId: string
+  name: string
+  supplierName?: string
+  qty: number
+  price: number
+  total: number
+  ledgerEntryId?: string
+}
+
+export interface WIPGood {
+  id: string
+  date: string
+  name: string
+  status: string
+  totalCost: number
+  rawMaterials: RawMaterialUsage[]
+  jobWorks: ManufacturingProcess[]
+}
+
+export interface FinishedGood {
+  id: string
+  date: string
+  name: string
+  qty: number
+  size?: string
+  cost: number
+  remarks?: string
+  location?: string
+  wipBreakdown?: string
+  supplierName?: string
+  ledgerEntryId?: string
 }
 
 interface StoreState {
   accounts: Account[]
   invoices: Invoice[]
-  addAccount: (account: Omit<Account, "id" | "balance" | "ledger">) => void
+  addAccount: (account: Omit<Account, "id" | "balance" | "ledger">) => Promise<string>
   updateAccount: (id: string, account: Partial<Account>) => void
-  addLedgerEntry: (accountId: string, entry: Omit<LedgerEntry, "id">) => void
+  addLedgerEntry: (accountId: string, entry: Omit<LedgerEntry, "id">) => Promise<string>
   updateLedgerEntry: (accountId: string, entryId: string, entry: Partial<LedgerEntry>) => void
   deleteLedgerEntry: (accountId: string, entryId: string) => void
   deleteAccount: (id: string) => void
-  addInvoice: (invoice: Omit<Invoice, "id" | "status">) => void
+  addInvoice: (invoice: Omit<Invoice, "id" | "status">) => Promise<string>
   updateInvoice: (id: string, invoice: Partial<Invoice>) => void
   deleteInvoice: (id: string) => void
   organizations: OrgConfig[]
@@ -89,41 +168,44 @@ interface StoreState {
   deleteOrganization: (id: string) => void
   organization: string
   setOrganization: (id: string) => void
+  triggerEditInvoiceId: string | null
+  setTriggerEditInvoiceId: (id: string | null) => void
+
+  rawMaterials: RawMaterial[]
+  wipGoods: WIPGood[]
+  finishedGoods: FinishedGood[]
+  addRawMaterial: (rm: Omit<RawMaterial, "id">) => Promise<string>
+  updateRawMaterial: (id: string, updates: Partial<RawMaterial>) => void
+  deleteRawMaterial: (id: string) => void
+  addWIPGood: (wip: Omit<WIPGood, "id">) => Promise<string>
+  updateWIPGood: (id: string, updates: Partial<WIPGood>) => void
+  deleteWIPGood: (id: string) => void
+  addFinishedGood: (fg: Omit<FinishedGood, "id">) => Promise<string>
+  updateFinishedGood: (id: string, updates: Partial<FinishedGood>) => void
+  deleteFinishedGood: (id: string) => void
+  purgeInventory: () => void
+  refreshData: () => Promise<void>
 }
 
 const StoreContext = createContext<StoreState | undefined>(undefined)
-
-const initialAccounts: Account[] = [
-  { id: "1", name: "ABC RETAIL PVT LTD", type: "Direct Agent", station: "City A", balance: 1146, ledger: [] },
-  { id: "2", name: "XYZ AGENCIES", type: "Agency", station: "City B", balance: -5000, ledger: [] }
-]
-
-const initialInvoices: Invoice[] = []
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<OrgConfig[]>([])
   const [activeOrgId, setActiveOrgId] = useState<string>("abc-company")
   const [accounts, setAccounts] = useState<Account[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
+
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
+  const [wipGoods, setWipGoods] = useState<WIPGood[]>([])
+  const [finishedGoods, setFinishedGoods] = useState<FinishedGood[]>([])
+
+  const [triggerEditInvoiceId, setTriggerEditInvoiceId] = useState<string | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const hasRestoredOrg = useRef(false)
 
-  // Fetch asynchronously from SQLite via Server Action
-  useEffect(() => {
-    setIsLoaded(false)
-    
-    // Restore saved org only on first mount
-    if (!hasRestoredOrg.current) {
-      hasRestoredOrg.current = true
-      const memoryOrgId = localStorage.getItem("jeans_active_org")
-      if (memoryOrgId && memoryOrgId !== activeOrgId) {
-        setActiveOrgId(memoryOrgId)
-        return
-      }
-    }
-
-    fetchStoreContext(activeOrgId).then((res) => {
-      // Prisma returns Date objects, we safely serialize them to maintain exact client types.
+  const refreshData = useCallback(async () => {
+    try {
+      const res = await fetchStoreContext(activeOrgId)
       setOrganizations(res.organizations.map((o: any) => ({
         ...o,
         gstNumber: o.gstNumber || undefined,
@@ -131,12 +213,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         address: o.address || undefined,
         city: o.city || undefined,
         state: o.state || undefined,
+        linkInvoicesLedgers: o.linkInvoicesLedgers || false,
+        linkInvoicesChanged: o.linkInvoicesChanged || false,
+        inventoryEnabled: o.inventoryEnabled || false,
+        strictInventoryInvoicing: o.strictInventoryInvoicing || false,
+        currency: o.currency || "INR",
       })))
       
-      const serializedAccounts = res.accounts.map((acc: any) => ({
-        ...acc,
-        ledger: acc.ledger.map((l: any) => ({ ...l, date: typeof l.date === 'string' ? l.date : l.date.toISOString() }))
-      }))
+      const serializedAccounts = res.accounts.map((acc: any) => {
+        const ledger = acc.ledger.map((l: any) => ({ ...l, date: typeof l.date === 'string' ? l.date : l.date.toISOString() }))
+        const multiplier = acc.category === "Supplier" ? -1 : 1
+        const recalculatedBalance = ledger.reduce((sum: number, e: any) => sum + ((e.amount || 0) - (e.discount || 0) + (e.taxOrPaid || 0) - (e.payment || 0)) * multiplier, 0)
+        return {
+          ...acc,
+          balance: recalculatedBalance,
+          ledger
+        }
+      })
       setAccounts(serializedAccounts as Account[])
 
       const serializedInvoices = res.invoices.map((inv: any) => ({
@@ -145,12 +238,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       setInvoices(serializedInvoices as Invoice[])
       
-      setIsLoaded(true)
-    }).catch(err => {
-      console.error("SQL fetch failed", err)
-      setIsLoaded(true)
-    })
+      setRawMaterials(res.rawMaterials?.map((r: any) => ({ ...r, date: typeof r.date === 'string' ? r.date : r.date.toISOString() })) || [])
+      setWipGoods(res.wipGoods?.map((w: any) => ({ ...w, date: typeof w.date === 'string' ? w.date : w.date.toISOString() })) || [])
+      setFinishedGoods(res.finishedGoods?.map((f: any) => ({ ...f, date: typeof f.date === 'string' ? f.date : f.date.toISOString() })) || [])
+    } catch (err) {
+      console.error("Data refresh failed", err)
+    }
   }, [activeOrgId])
+
+  useEffect(() => {
+    setIsLoaded(false)
+    if (!hasRestoredOrg.current) {
+      hasRestoredOrg.current = true
+      const memoryOrgId = localStorage.getItem("jeans_active_org")
+      if (memoryOrgId && memoryOrgId !== activeOrgId) {
+        setActiveOrgId(memoryOrgId)
+        return
+      }
+    }
+    refreshData().then(() => setIsLoaded(true))
+  }, [activeOrgId, refreshData])
 
   useEffect(() => {
     if (isLoaded) {
@@ -160,139 +267,234 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addOrganization = async (name: string) => {
     const newId = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now()
-    const newOrg = { id: newId, name }
-    
-    // Optimistic
-    setOrganizations(prev => [...prev, newOrg])
-    setActiveOrgId(newId)
-    
-    // SQL Exec
-    await serverAddOrganization(name, newId)
+    try {
+      await serverAddOrganization(name, newId)
+      await refreshData()
+      setActiveOrgId(newId)
+    } catch (err) {
+      toast.error("Failed to add organization")
+    }
   }
 
   const updateOrganization = async (id: string, updates: Partial<OrgConfig>) => {
     setOrganizations(prev => prev.map(o => (o.id === id ? { ...o, ...updates } : o)))
-    await serverUpdateOrganization(id, updates)
+    try {
+      await serverUpdateOrganization(id, updates)
+    } catch (err) {
+      toast.error("Update failed. Reverting...")
+      await refreshData()
+    }
   }
 
   const deleteOrganization = async (id: string) => {
-    const remaining = organizations.filter(o => o.id !== id)
-    setOrganizations(remaining)
-    if (activeOrgId === id) {
-      const nextOrg = remaining[0]?.id || "abc-company"
-      setActiveOrgId(nextOrg)
+    try {
+      await serverDeleteOrganization(id)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
     }
-    await serverDeleteOrganization(id)
   }
 
   const addAccount = async (acc: Omit<Account, "id" | "balance" | "ledger">) => {
-    const newId = Date.now().toString()
-    const newAccount: Account = { ...acc, id: newId, balance: 0, ledger: [] }
-    setAccounts(prev => [...prev, newAccount])
-    await serverAddAccount(activeOrgId, { ...acc, id: newId, balance: 0 })
+    try {
+      const res = await serverAddAccount(activeOrgId, acc)
+      await refreshData()
+      return res.id
+    } catch (err) {
+      toast.error("Failed to add account")
+      return ""
+    }
   }
 
   const updateAccount = async (id: string, updates: Partial<Account>) => {
     setAccounts(prev => prev.map((a) => (a.id === id ? { ...a, ...updates } : a)))
-    await serverUpdateAccount(id, updates)
+    try {
+      await serverUpdateAccount(id, updates)
+    } catch (err) {
+      toast.error("Update failed. Reverting...")
+      await refreshData()
+    }
   }
 
   const deleteAccount = async (id: string) => {
-    setAccounts(prev => prev.filter((a) => a.id !== id))
-    await serverDeleteAccount(id)
+    try {
+      await serverDeleteAccount(id)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
+    }
   }
 
   const addLedgerEntry = async (accountId: string, entry: Omit<LedgerEntry, "id">) => {
-    // 1. Optimistic update with temp ID
-    const tempId = "temp-" + Date.now()
-    setAccounts(prev => prev.map((acc) => {
-      if (acc.id === accountId) {
-        const newEntry = { ...entry, id: tempId }
-        const newBalance = acc.balance + (entry.amount - entry.discount + entry.taxOrPaid - entry.payment)
-        return { ...acc, balance: newBalance, ledger: [...acc.ledger, newEntry] }
-      }
-      return acc
-    }))
-    
-    // 2. Server call
     try {
       const savedEntry = await serverAddLedgerEntry(accountId, entry)
-      // 3. Replace temp ID with real ID from server
-      setAccounts(prev => prev.map((acc) => {
-        if (acc.id === accountId) {
-          return {
-            ...acc,
-            ledger: acc.ledger.map(e => e.id === tempId ? { ...savedEntry, date: typeof savedEntry.date === 'string' ? savedEntry.date : savedEntry.date.toISOString() } : e)
-          }
-        }
-        return acc
-      }))
+      await refreshData()
+      return savedEntry.id
     } catch (err) {
-      console.error("Failed to save ledger entry", err)
-      // Rollback could be added here if needed
+      toast.error("Failed to add entry")
+      return ""
     }
   }
 
   const updateLedgerEntry = async (accountId: string, entryId: string, entry: Partial<LedgerEntry>) => {
-    // 1. Optimistic update
-    setAccounts(prev => prev.map((acc) => {
-      if (acc.id === accountId) {
-        const updatedLedger = acc.ledger.map(e => (e.id === entryId ? { ...e, ...entry } : e))
-        const newBalance = updatedLedger.reduce((sum, e) => sum + (e.amount - e.discount + e.taxOrPaid - e.payment), 0)
-        return { ...acc, balance: newBalance, ledger: updatedLedger }
-      }
-      return acc
-    }))
-    
-    // 2. Server sync
-    if (!entryId.startsWith("temp-")) {
+    try {
       await serverUpdateLedgerEntry(entryId, entry)
+      await refreshData()
+    } catch (err) {
+      toast.error("Update failed")
+      await refreshData()
     }
   }
 
   const deleteLedgerEntry = async (accountId: string, entryId: string) => {
-    // 1. Optimistic update
-    setAccounts(prev => prev.map((acc) => {
-      if (acc.id === accountId) {
-        const updatedLedger = acc.ledger.filter(e => e.id !== entryId)
-        const newBalance = updatedLedger.reduce((sum, e) => sum + (e.amount - e.discount + e.taxOrPaid - e.payment), 0)
-        return { ...acc, balance: newBalance, ledger: updatedLedger }
-      }
-      return acc
-    }))
-    
-    // 2. Server sync
-    if (!entryId.startsWith("temp-")) {
+    try {
       await serverDeleteLedgerEntry(entryId)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
     }
   }
 
   const addInvoice = async (inv: Omit<Invoice, "id" | "status">) => {
-    const newId = Date.now().toString()
-    setInvoices(prev => [...prev, { ...inv, id: newId, status: "pending" as const }])
-    await serverAddInvoice(activeOrgId, { ...inv, id: newId, status: "pending" })
+    try {
+      const res = await serverAddInvoice(activeOrgId, inv)
+      await refreshData()
+      return res.id
+    } catch (err) {
+      toast.error("Failed to create invoice")
+      return ""
+    }
   }
 
   const updateInvoice = async (id: string, updates: Partial<Invoice>) => {
-    setInvoices(prev => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)))
-    await serverUpdateInvoice(id, updates)
+    try {
+      await serverUpdateInvoice(id, updates)
+      await refreshData()
+    } catch (err) {
+      toast.error("Update failed")
+      await refreshData()
+    }
   }
 
   const deleteInvoice = async (id: string) => {
-    setInvoices(prev => prev.filter((i) => i.id !== id))
-    await serverDeleteInvoice(id)
+    try {
+      await serverDeleteInvoice(id)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
+    }
   }
 
-  if (!isLoaded) return null // Or a loader
+  const addRawMaterial = async (rm: Omit<RawMaterial, "id">) => {
+    try {
+      const res = await serverAddRawMaterial(activeOrgId, rm)
+      await refreshData()
+      return res.id
+    } catch (err) {
+      toast.error("Failed to add raw material")
+      return ""
+    }
+  }
+
+  const updateRawMaterial = async (id: string, updates: Partial<RawMaterial>) => {
+    try {
+      await serverUpdateRawMaterial(id, updates)
+      await refreshData()
+    } catch (err) {
+      toast.error("Update failed")
+      await refreshData()
+    }
+  }
+
+  const deleteRawMaterial = async (id: string) => {
+    try {
+      await serverDeleteRawMaterial(id)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
+    }
+  }
+
+  const addWIPGood = async (wip: Omit<WIPGood, "id">) => {
+    try {
+      const res = await serverAddWIPGood(activeOrgId, wip)
+      await refreshData()
+      return res.id
+    } catch (err) {
+      toast.error("Failed to add WIP good")
+      return ""
+    }
+  }
+
+  const updateWIPGood = async (id: string, updates: Partial<WIPGood>) => {
+    try {
+      await serverUpdateWIPGood(id, updates)
+      await refreshData()
+    } catch (err) {
+      toast.error("Update failed")
+      await refreshData()
+    }
+  }
+
+  const deleteWIPGood = async (id: string) => {
+    try {
+      await serverDeleteWIPGood(id)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
+    }
+  }
+
+  const addFinishedGood = async (fg: Omit<FinishedGood, "id">) => {
+    try {
+      const res = await serverAddFinishedGood(activeOrgId, fg)
+      await refreshData()
+      return res.id
+    } catch (err) {
+      toast.error("Failed to add finished good")
+      return ""
+    }
+  }
+
+  const updateFinishedGood = async (id: string, updates: Partial<FinishedGood>) => {
+    try {
+      await serverUpdateFinishedGood(id, updates)
+      await refreshData()
+    } catch (err) {
+      toast.error("Update failed")
+      await refreshData()
+    }
+  }
+
+  const deleteFinishedGood = async (id: string) => {
+    try {
+      await serverDeleteFinishedGood(id)
+      await refreshData()
+    } catch (err) {
+      toast.error("Deletion failed")
+    }
+  }
+
+  const purgeInventory = async () => {
+    try {
+      await serverPurgeInventory(activeOrgId)
+      await refreshData()
+    } catch (err) {
+      toast.error("Purge failed")
+    }
+  }
+
+  if (!isLoaded) return null
 
   const activeOrg = organizations.find(o => o.id === activeOrgId) || organizations[0] || { id: "abc-company", name: "ABC Company" }
-  const organizationName = activeOrg.name
 
   return (
     <StoreContext.Provider value={{ 
       accounts, invoices, addAccount, updateAccount, deleteAccount, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, addInvoice, updateInvoice, deleteInvoice, 
-    organizations, activeOrgId, activeOrg, addOrganization, updateOrganization, deleteOrganization,
-    organization: organizationName, setOrganization: setActiveOrgId 
+      organizations, activeOrgId, activeOrg, addOrganization, updateOrganization, deleteOrganization,
+      organization: activeOrg.name, setOrganization: setActiveOrgId,
+      triggerEditInvoiceId, setTriggerEditInvoiceId,
+      rawMaterials, wipGoods, finishedGoods, addRawMaterial, updateRawMaterial, deleteRawMaterial, addWIPGood, updateWIPGood, deleteWIPGood, addFinishedGood, updateFinishedGood, deleteFinishedGood, purgeInventory, refreshData
     }}>
       {children}
     </StoreContext.Provider>

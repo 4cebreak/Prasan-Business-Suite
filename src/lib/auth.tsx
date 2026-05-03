@@ -4,7 +4,14 @@ import { createContext, useContext, useState, ReactNode, useEffect } from "react
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Lock, Eye, EyeOff, ShieldCheck, Building2, KeyRound, Plus } from "lucide-react"
-import { checkFreshInstall, serverAddOrganization, serverGetMasterPasswordHash, serverSetMasterPasswordHash, serverListOrganizations } from "@/app/actions"
+import { 
+  checkFreshInstall, 
+  serverAddOrganization, 
+  serverSetMasterPasswordHash, 
+  serverListOrganizations, 
+  serverLogin,
+  serverLogout
+} from "@/app/actions"
 import {
   Dialog,
   DialogContent,
@@ -22,105 +29,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-async function hashPassword(password: string): Promise<string> {
-  // Check for secure context (crypto.subtle)
-  if (typeof crypto !== "undefined" && crypto.subtle) {
-    const encoder = new TextEncoder()
-    const data = encoder.encode(password)
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("")
-  }
-
-  // Fallback for insecure contexts (e.g. accessing via IP on mobile over HTTP)
-  return sha256Fallback(password)
-}
-
-/**
- * A lightweight SHA-256 implementation as a fallback for insecure contexts
- * where crypto.subtle is unavailable.
- */
-function sha256Fallback(ascii: string): string {
-  function rightRotate(value: number, amount: number) {
-    return (value >>> amount) | (value << (32 - amount))
-  }
-  
-  const mathPow = Math.pow
-  const maxWord = mathPow(2, 32)
-  const lengthProperty = 'length'
-  let i, j // Used as a counter across the whole file
-  let result = ''
-
-  const k: number[] = []
-  const hash: number[] = []
-  let primeCounter = 0
-  const isComposite: { [key: number]: number } = {}
-  
-  for (i = 2; primeCounter < 64; i++) {
-    if (!isComposite[i]) {
-      for (j = i * i; j < 311; j += i) {
-        isComposite[j] = 1
-      }
-      hash[primeCounter] = (mathPow(i, 1/2) * maxWord) | 0
-      k[primeCounter++] = (mathPow(i, 1/3) * maxWord) | 0
-    }
-  }
-  
-  let ascii_padded = ascii + '\x80'
-  while (ascii_padded[lengthProperty] % 64 - 56) ascii_padded += '\x00'
-  
-  const words: number[] = []
-  const asciiBitLength = ascii[lengthProperty] * 8
-  
-  for (i = 0; i < ascii_padded[lengthProperty]; i++) {
-    j = ascii_padded.charCodeAt(i)
-    words[i >> 2] |= j << ((3 - i % 4) * 8)
-  }
-  
-  words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0)
-  words[words[lengthProperty]] = (asciiBitLength | 0)
-
-  for (j = 0; j < words[lengthProperty]; j += 16) {
-    const w = words.slice(j, j + 16)
-    const oldHash = [...hash]
-    hash.splice(8)
-    
-    for (i = 0; i < 64; i++) {
-      const w15 = w[i - 15], w2 = w[i - 2]
-      const a = hash[0], e = hash[4]
-      const temp1 = hash[7]
-        + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
-        + ((e & hash[5]) ^ (~e & hash[6]))
-        + k[i]
-        + (w[i] = (i < 16) ? w[i] : (
-            w[i - 16]
-            + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
-            + w[i - 7]
-            + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
-          ) | 0
-        )
-      const temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
-        + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]))
-      
-      hash.unshift((temp1 + temp2) | 0)
-      hash[4] = (hash[4] + temp1) | 0
-    }
-    
-    for (i = 0; i < 8; i++) {
-      hash[i] = (hash[i] + oldHash[i]) | 0
-    }
-  }
-  
-  for (i = 0; i < 8; i++) {
-    for (j = 3; j + 1; j--) {
-      const b = (hash[i] >> (j * 8)) & 255
-      result += (b < 16 ? '0' : '') + b.toString(16)
-    }
-  }
-  return result
-}
-
-
 // ──────────────────────────────────────────────────────────────────
 // SETUP WIZARD — shown only on completely fresh installs
 // ──────────────────────────────────────────────────────────────────
@@ -132,6 +40,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [linkInvoices, setLinkInvoices] = useState(false)
 
   const handleFinish = async () => {
     if (password.length < 4) { setError("Password must be at least 4 characters."); return }
@@ -140,19 +49,13 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
     setIsSubmitting(true)
     setError("")
     try {
-      // Store password hash
-      const hashed = await hashPassword(password)
-      
-      // Try to get existing org or create new
       const orgId = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-')
-      try {
-        await serverAddOrganization(companyName.trim(), orgId, hashed)
-      } catch (e) {
-        // Org might already exist (orphaned install), try setting the hash directly
-        await serverSetMasterPasswordHash(hashed)
-      }
+      // Password is hashed ON THE SERVER now
+      await serverAddOrganization(companyName.trim(), orgId, password, linkInvoices)
       
-      localStorage.setItem("jeans_master_password_hash", hashed)
+      // Also log them in immediately on the server
+      await serverLogin(orgId, password)
+      
       localStorage.setItem("jeans_active_org", orgId)
       localStorage.setItem("jeans_setup_complete", "true")
       
@@ -166,7 +69,6 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
             <ShieldCheck className="w-10 h-10 text-primary" />
@@ -175,7 +77,6 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <p className="text-muted-foreground text-sm mt-1">Let&apos;s set up your business in 2 steps</p>
         </div>
 
-        {/* Progress Dots */}
         <div className="flex justify-center gap-2 mb-6">
           <div className={`w-3 h-3 rounded-full transition-colors ${step >= 1 ? 'bg-primary' : 'bg-muted'}`} />
           <div className={`w-3 h-3 rounded-full transition-colors ${step >= 2 ? 'bg-primary' : 'bg-muted'}`} />
@@ -254,6 +155,24 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
                   />
                 </div>
               </div>
+              
+              <div className="flex items-center gap-3 bg-primary/5 p-4 rounded-xl border border-primary/20">
+                <input 
+                  type="checkbox" 
+                  id="linkInvoices" 
+                  checked={linkInvoices} 
+                  onChange={(e) => setLinkInvoices(e.target.checked)}
+                  className="w-5 h-5 rounded border-primary/50 text-primary focus:ring-primary"
+                />
+                <div className="flex flex-col">
+                  <label htmlFor="linkInvoices" className="text-sm font-semibold text-foreground cursor-pointer">
+                    Link Invoices with Ledgers
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    Automatically sync invoices to ledgers. This can be changed later in Settings.
+                  </span>
+                </div>
+              </div>
 
               {error && (
                 <div className="text-sm text-red-400 bg-red-400/10 rounded-xl px-4 py-2.5 font-medium">{error}</div>
@@ -288,50 +207,26 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   const [organizations, setOrganizations] = useState<{id: string, name: string}[]>([])
   const [selectedOrgId, setSelectedOrgId] = useState("")
   const [isLoadingOrgs, setIsLoadingOrgs] = useState(true)
-  const [isSettingPassword, setIsSettingPassword] = useState(false)
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [storedHash, setStoredHash] = useState<string | null>(null)
   
   // Add Org modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [newName, setNewName] = useState("")
   const [newPass, setNewPass] = useState("")
   const [newConfirm, setNewConfirm] = useState("")
+  const [newLinkInvoices, setNewLinkInvoices] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
 
   useEffect(() => {
-    serverListOrganizations().then(async orgs => {
+    serverListOrganizations().then(orgs => {
       setOrganizations(orgs)
       if (orgs.length > 0) {
         const lastActive = localStorage.getItem("jeans_active_org")
         const activeId = (lastActive && orgs.find(o => o.id === lastActive)) ? lastActive : orgs[0].id
         setSelectedOrgId(activeId)
-        
-        // Check hash for the initial selected org
-        const sHash = await serverGetMasterPasswordHash(activeId)
-        setStoredHash(sHash)
-        setIsSettingPassword(!sHash && !localStorage.getItem(`jeans_hash_${activeId}`))
       }
       setIsLoadingOrgs(false)
     })
   }, [])
-
-  // Re-check hash when organization changes
-  useEffect(() => {
-    if (!selectedOrgId || isLoadingOrgs) return
-    const checkHash = async () => {
-      const localHash = localStorage.getItem(`jeans_hash_${selectedOrgId}`)
-      if (localHash) {
-        setStoredHash(localHash)
-        setIsSettingPassword(false)
-        return
-      }
-      const sHash = await serverGetMasterPasswordHash(selectedOrgId)
-      setStoredHash(sHash)
-      setIsSettingPassword(!sHash)
-    }
-    checkHash()
-  }, [selectedOrgId])
 
   const handleLogin = async () => {
     if (!password.trim()) { setError("Please enter the master password"); return }
@@ -339,48 +234,18 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     setIsVerifying(true)
     setError("")
 
-    const hashed = await hashPassword(password)
-    
-    if (isSettingPassword) {
-      if (password !== confirmPassword) { setError("Passwords do not match."); setIsVerifying(false); return }
-      if (password.length < 4) { setError("Password must be at least 4 characters."); setIsVerifying(false); return }
-      
-      await serverSetMasterPasswordHash(hashed, selectedOrgId)
-      localStorage.setItem(`jeans_hash_${selectedOrgId}`, hashed)
-      setStoredHash(hashed)
-      setIsSettingPassword(false)
-      sessionStorage.setItem("jeans_auth", "true")
-      localStorage.setItem("jeans_active_org", selectedOrgId)
-      onLogin()
-      setIsVerifying(false)
-      return
-    }
-
-    let currentHash = storedHash
-    if (!currentHash) {
-      currentHash = localStorage.getItem(`jeans_hash_${selectedOrgId}`)
-    }
-    
-    if (!currentHash) {
-      setError("No password configured. Please set a password.")
-      setIsSettingPassword(true)
-      setIsVerifying(false)
-      return
-    }
-
-    if (hashed === currentHash) {
-      // Sync local hash to server if not already there (for migration to DB)
-      serverGetMasterPasswordHash(selectedOrgId).then(serverHash => {
-        if (!serverHash) serverSetMasterPasswordHash(hashed, selectedOrgId)
-      })
+    try {
+      // Login happens ON THE SERVER now
+      await serverLogin(selectedOrgId, password)
       
       localStorage.setItem("jeans_active_org", selectedOrgId)
       sessionStorage.setItem("jeans_auth", "true")
       onLogin()
-    } else {
-      setError("Incorrect password. Access denied.")
+    } catch (err: any) {
+      setError(err.message || "Invalid password. Access denied.")
+    } finally {
+      setIsVerifying(false)
     }
-    setIsVerifying(false)
   }
 
   const handleCreateNew = async () => {
@@ -391,18 +256,19 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     setIsCreating(true)
     setError("")
     try {
-      const hashed = await hashPassword(newPass)
       const newId = newName.toLowerCase().replace(/[^a-z0-9]/g, '-')
-      await serverAddOrganization(newName.trim(), newId, hashed)
+      // Passwords are hashed on the server
+      await serverAddOrganization(newName.trim(), newId, newPass, newLinkInvoices)
+      await serverLogin(newId, newPass)
       
-      localStorage.setItem(`jeans_hash_${newId}`, hashed)
       localStorage.setItem("jeans_active_org", newId)
       sessionStorage.setItem("jeans_auth", "true")
       onLogin()
     } catch (err: any) {
       setError(err.message || "Failed to create business")
+    } finally {
+      setIsCreating(false)
     }
-    setIsCreating(false)
   }
 
   return (
@@ -484,6 +350,23 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
                       className="rounded-xl bg-muted border-0 h-11"
                     />
                   </div>
+                  <div className="flex items-center gap-3 bg-primary/5 p-3 rounded-xl border border-primary/20 mt-2">
+                    <input 
+                      type="checkbox" 
+                      id="newLinkInvoices" 
+                      checked={newLinkInvoices} 
+                      onChange={(e) => setNewLinkInvoices(e.target.checked)}
+                      className="w-4 h-4 rounded border-primary/50 text-primary focus:ring-primary"
+                    />
+                    <div className="flex flex-col">
+                      <label htmlFor="newLinkInvoices" className="text-xs font-semibold text-foreground cursor-pointer">
+                        Link Invoices with Ledgers
+                      </label>
+                      <span className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                        Automatically sync invoices to ledgers.
+                      </span>
+                    </div>
+                  </div>
                 </div>
                 <DialogFooter className="flex gap-2">
                   <Button variant="outline" onClick={() => setIsAddModalOpen(false)} className="rounded-xl flex-1">Cancel</Button>
@@ -496,16 +379,14 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           </div>
 
           <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">
-              {isSettingPassword ? "Create Master Password" : "Master Password"}
-            </label>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">Master Password</label>
             <div className="relative">
               <Input
                 type={showPassword ? "text" : "password"}
-                placeholder={isSettingPassword ? "Create password" : "Enter password"}
+                placeholder="Enter password"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError("") }}
-                onKeyDown={(e) => { if (e.key === "Enter" && !isSettingPassword) handleLogin() }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleLogin() }}
                 className="rounded-xl h-12 bg-muted border-0 pr-12"
                 autoFocus
               />
@@ -519,20 +400,6 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             </div>
           </div>
 
-          {isSettingPassword && (
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1.5 block">Confirm Password</label>
-              <Input
-                type={showPassword ? "text" : "password"}
-                placeholder="Repeat password"
-                value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); setError("") }}
-                onKeyDown={(e) => { if (e.key === "Enter") handleLogin() }}
-                className="rounded-xl h-12 bg-muted border-0"
-              />
-            </div>
-          )}
-
           {error && (
             <div className="text-sm text-red-400 bg-red-400/10 rounded-xl px-4 py-2.5 font-medium">{error}</div>
           )}
@@ -542,7 +409,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             disabled={isVerifying}
             className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-base font-semibold"
           >
-            {isVerifying ? "Verifying..." : (isSettingPassword ? "Initialize Business" : "Unlock Dashboard")}
+            {isVerifying ? "Verifying..." : "Unlock Dashboard"}
           </Button>
         </div>
       </div>
@@ -575,7 +442,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsFreshInstall(true)
         }
       } catch (e) {
-        // DB might not be ready yet, fallback to checking localStorage
         const hasSetup = localStorage.getItem("jeans_setup_complete")
         if (!hasSetup) setIsFreshInstall(true)
       }
@@ -585,7 +451,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     check()
   }, [])
 
-  const logout = () => {
+  const logout = async () => {
+    await serverLogout()
     sessionStorage.removeItem("jeans_auth")
     setIsAuthenticated(false)
   }

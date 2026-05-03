@@ -28,7 +28,11 @@ for /f "tokens=*" %%v in ('node -v') do echo [OK] Node.js found: %%v
 if not exist ".env" (
     echo [INFO] Creating .env configuration file...
     echo DATABASE_URL="file:./dev.db">.env
+    :: Generate a simple pseudo-random secret on Windows
+    set "SECRET=!RANDOM!!RANDOM!!RANDOM!!RANDOM!"
+    echo SESSION_SECRET="!SECRET!">>.env
 )
+
 
 :: 2. Check for node_modules platform mismatch
 if exist "node_modules" (
@@ -54,20 +58,10 @@ if not exist "node_modules" (
 )
 
 :: 4. Database Setup
-if not exist "dev.db" (
-    echo [INFO] Setting up database for the first time...
-    call npx prisma generate
-    call npx prisma db push
-    if %errorlevel% neq 0 (
-        echo.
-        echo [ERROR] Database setup failed.
-        pause
-        exit /b 1
-    )
-) else (
-    rem Run generate anyway to ensure client is up to date
-    call npx prisma generate >nul 2>nul
-)
+echo [INFO] Synchronizing database schema...
+call npx prisma generate >nul 2>nul
+call npx prisma db push --accept-data-loss >nul 2>nul
+
 
 echo.
 echo [STARTING] Prasan ERP at http://localhost:3000

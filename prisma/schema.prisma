@@ -10,20 +10,36 @@ model Organization {
   id                 String   @id @default(cuid())
   name               String
   masterPasswordHash String?
-  gstNumber String?
-  panNumber String?
-  address   String?
-  city      String?
-  state     String?
+  gstNumber          String?
+  panNumber          String?
+  address            String?
+  city               String?
+  state              String?
   
-  accounts  Account[]
-  invoices  Invoice[]
+  linkInvoicesLedgers Boolean @default(false)
+  linkInvoicesChanged Boolean @default(false)
+  inventoryEnabled    Boolean @default(false)
+  strictInventoryInvoicing Boolean @default(false)
+  currency            String  @default("INR")
+  invoiceShowBrandName Boolean @default(true)
+  invoiceShowSize      Boolean @default(true)
+  invoiceBrandNameLabel String @default("Brand Name")
+  invoiceSizeLabel     String @default("Size")
+  taxMode              String  @default("manual")
+  taxPercentage        Float   @default(0)
+  
+  accounts      Account[]
+  invoices      Invoice[]
+  rawMaterials  RawMaterial[]
+  wipGoods      WIPGood[]
+  finishedGoods FinishedGood[]
 }
 
 model Account {
   id        String         @id @default(cuid())
   name      String
-  type      String         // "Direct Agent" | "Agency"
+  category  String         @default("Customer") // "Customer" | "Supplier"
+  type      String         // "Direct" | "Agency"
   station   String?
   balance   Float          @default(0)
   
@@ -47,30 +63,36 @@ model LedgerEntry {
   type        String   // "bill" | "payment"
   paymentMode String?
   
+  invoiceId   String?  @unique
+  
   accountId   String
   account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 }
 
 model Invoice {
-  id           String    @id @default(cuid())
-  invoiceNo    String
-  date         DateTime  @default(now())
-  customerName String
-  agencyName   String?
-  city         String?
-  transport    String?
-  remarks      String?
-  marka        String?
-  subtotal     Float     @default(0)
-  discount     Float     @default(0)
-  taxes        Float     @default(0)
-  grandTotal   Float     @default(0)
-  status       String    @default("pending") // "paid" | "pending" | "overdue"
+  id               String    @id @default(cuid())
+  invoiceNo        String
+  date             DateTime  @default(now())
+  customerName     String
+  agencyName       String?
+  city             String?
+  transport        String?
+  transportCharges Float     @default(0)
+  remarks          String?
+  marka            String?
+  itemsDescription String?
+  subtotal         Float     @default(0)
+  discount         Float     @default(0)
+  taxes            Float     @default(0)
+  grandTotal       Float     @default(0)
+  status           String    @default("pending") // "paid" | "pending" | "overdue"
   
-  orgId        String
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  ledgerEntryId    String?   @unique
   
-  items        ItemRow[]
+  orgId            String
+  organization     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  items            ItemRow[]
 }
 
 model ItemRow {
@@ -82,7 +104,85 @@ model ItemRow {
   qty       Int      @default(0)
   rate      Float    @default(0)
   amount    Float    @default(0)
+  finishedGoodId String?
   
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model RawMaterial {
+  id            String   @id @default(cuid())
+  date          DateTime @default(now())
+  name          String
+  type          String?
+  qty           Int      @default(0)
+  qtyUsed       Int      @default(0)
+  remarks       String?
+  price         Float    @default(0)
+  total         Float    @default(0)
+  location      String?
+  invNo         String?
+  billerName    String?
+  supplierName  String?
+  
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  ledgerEntryId String? @unique
+}
+
+model WIPGood {
+  id            String   @id @default(cuid())
+  date          DateTime @default(now())
+  name          String
+  status        String   @default("Started")
+  totalCost     Float    @default(0)
+  
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  rawMaterials  RawMaterialUsage[]
+  jobWorks      ManufacturingProcess[]
+}
+
+model RawMaterialUsage {
+  id            String   @id @default(cuid())
+  wipId         String
+  wip           WIPGood  @relation(fields: [wipId], references: [id], onDelete: Cascade)
+  
+  name          String
+  qty           Int
+  cost          Float    @default(0)
+}
+
+model ManufacturingProcess {
+  id            String   @id @default(cuid())
+  wipId         String
+  wip           WIPGood  @relation(fields: [wipId], references: [id], onDelete: Cascade)
+  
+  name          String
+  supplierName  String?
+  qty           Int      @default(0)
+  price         Float    @default(0)
+  total         Float    @default(0)
+  
+  ledgerEntryId String?  @unique
+}
+
+model FinishedGood {
+  id            String   @id @default(cuid())
+  date          DateTime @default(now())
+  name          String
+  qty           Int      @default(0)
+  size          String?
+  cost          Float    @default(0)
+  remarks       String?
+  location      String?
+  wipBreakdown  String?
+  
+  supplierName  String?
+  ledgerEntryId String?  @unique
+  
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }

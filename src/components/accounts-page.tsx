@@ -22,21 +22,24 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { cn } from "@/lib/utils"
+import { cn, formatCurrency as globalFormatCurrency } from "@/lib/utils"
 import { useStore, Account, LedgerEntry } from "@/lib/store"
 
 const PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "Google Pay", "NEFT/RTGS"]
 
 export function AccountsPage() {
-  const { accounts, addAccount, updateAccount, deleteAccount, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, organization } = useStore()
+  const { accounts, addAccount, updateAccount, deleteAccount, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, organization, setTriggerEditInvoiceId, activeOrg } = useStore()
   const [searchQuery, setSearchQuery] = useState("")
 
   // Account form state
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
   const [newAccountName, setNewAccountName] = useState("")
-  const [newAccountType, setNewAccountType] = useState<"Direct Agent" | "Agency">("Direct Agent")
+  const [newAccountCategory, setNewAccountCategory] = useState<"Customer" | "Supplier">("Customer")
+  const [newAccountType, setNewAccountType] = useState<"Direct" | "Agency">("Direct")
   const [newAccountStation, setNewAccountStation] = useState("")
+
+  const [activeCategoryTab, setActiveCategoryTab] = useState<"Customer" | "Supplier">("Customer")
 
   // Ledger state (track by ID to stay in sync with global store)
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
@@ -68,11 +71,21 @@ export function AccountsPage() {
   const [exportFilterTo, setExportFilterTo] = useState("")
   const [exportFilterType, setExportFilterType] = useState<"all" | "bill" | "payment">("all")
 
-  // Empty line states for ledger
   const [entryDate, setEntryDate] = useState(() => {
     const today = new Date()
     return today.toISOString().split("T")[0]
   })
+
+  const splitParty = (partyStr: string) => {
+    if (!partyStr) return { invNo: "-", party: "-" };
+    if (partyStr.includes(" - ")) {
+      const parts = partyStr.split(" - ");
+      return { invNo: parts[0], party: parts.slice(1).join(" - ") };
+    }
+    return { invNo: "-", party: partyStr };
+  }
+
+  const [entryInvoiceNo, setEntryInvoiceNo] = useState("")
   const [entryParty, setEntryParty] = useState("")
   const [entryStation, setEntryStation] = useState("")
   const [entryAmount, setEntryAmount] = useState<number | "">("")
@@ -88,15 +101,21 @@ export function AccountsPage() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
 
   const filteredAccounts = accounts.filter(
-    (account) =>
-      account.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      account.station.toLowerCase().includes(searchQuery.toLowerCase())
+    (account) => {
+      const q = searchQuery.toLowerCase()
+      return (
+        account.name.toLowerCase().includes(q) ||
+        account.station.toLowerCase().includes(q) ||
+        account.ledger.some(entry => entry.party?.toLowerCase().includes(q))
+      )
+    }
   )
 
   const openNewAccount = () => {
     setEditingAccountId(null)
     setNewAccountName("")
-    setNewAccountType("Direct Agent")
+    setNewAccountCategory("Customer")
+    setNewAccountType("Direct")
     setNewAccountStation("")
     setIsAccountDialogOpen(true)
   }
@@ -104,6 +123,7 @@ export function AccountsPage() {
   const openEditAccount = (account: Account) => {
     setEditingAccountId(account.id)
     setNewAccountName(account.name)
+    setNewAccountCategory(account.category)
     setNewAccountType(account.type)
     setNewAccountStation(account.station)
     setIsAccountDialogOpen(true)
@@ -114,11 +134,12 @@ export function AccountsPage() {
       if (editingAccountId) {
         updateAccount(editingAccountId, {
           name: newAccountName,
+          category: newAccountCategory,
           type: newAccountType,
           station: newAccountStation
         })
       } else {
-        addAccount({ name: newAccountName, type: newAccountType, station: newAccountStation })
+        addAccount({ name: newAccountName, category: newAccountCategory, type: newAccountType, station: newAccountStation })
       }
       setIsAccountDialogOpen(false)
     }
@@ -127,6 +148,7 @@ export function AccountsPage() {
   const resetEntryForm = () => {
     setEditingEntryId(null)
     setEntryDate(new Date().toISOString().split("T")[0])
+    setEntryInvoiceNo("")
     setEntryParty("")
     setEntryStation("")
     setEntryAmount("")
@@ -139,9 +161,25 @@ export function AccountsPage() {
   }
 
   const openEditLedgerEntry = (entry: LedgerEntry) => {
+    if (entry.invoiceId) {
+      setTriggerEditInvoiceId(entry.invoiceId)
+      window.dispatchEvent(new CustomEvent('openInvoiceEdit'))
+      setSelectedAccountId(null) // close ledger modal
+      return
+    }
+
     setEditingEntryId(entry.id)
     setEntryDate(entry.date)
-    setEntryParty(entry.party)
+
+    if (entry.party && entry.party.includes(" - ")) {
+      const parts = entry.party.split(" - ")
+      setEntryInvoiceNo(parts[0])
+      setEntryParty(parts.slice(1).join(" - "))
+    } else {
+      setEntryInvoiceNo("")
+      setEntryParty(entry.party || "")
+    }
+
     setEntryStation(entry.station)
     setEntryAmount(entry.amount ?? "")
     setEntryDiscount(entry.discount ?? "")
@@ -157,29 +195,46 @@ export function AccountsPage() {
   const handleSaveLedgerEntry = async () => {
     if (!selectedAccountId) return
 
-    const newId = editingEntryId || "temp-" + Date.now()
-    const entryData: LedgerEntry = {
-      id: newId,
-      date: entryDate,
-      party: entryParty,
-      station: entryStation,
-      amount: Number(entryAmount) || 0,
-      discount: Number(entryDiscount) || 0,
-      taxOrPaid: Number(entryTaxOrPaid) || 0,
-      netAmount: currentNetAmount,
-      items: entryItems,
-      payment: Number(entryPayment) || 0,
-      type: entryType,
-      paymentMode: entryType === "payment" ? entryPaymentMode : undefined
-    }
+    if (selectedAccountId && (entryParty || entryInvoiceNo || entryAmount || entryPayment)) {
+      let finalParty = entryParty
+      if (!finalParty && !entryInvoiceNo) {
+        finalParty = entryType === "payment" ? "Payment" : "Bill"
+      }
+      const combinedParty = entryInvoiceNo ? `${entryInvoiceNo} - ${finalParty}` : finalParty
+      
+      const newAmount = Number(entryAmount) || 0
+      const newDiscount = Number(entryDiscount) || 0
+      const newTaxOrPaid = Number(entryTaxOrPaid) || 0
+      const newPayment = Number(entryPayment) || 0
+      
+      let newNetAmount = 0
+      if (entryType === "bill") {
+        newNetAmount = newAmount - newDiscount + newTaxOrPaid
+      }
 
-    if (editingEntryId) {
-      setStagedLedger(prev => prev.map(e => e.id === editingEntryId ? entryData : e))
-    } else {
-      setStagedLedger(prev => [...prev, entryData])
+      const entryData: LedgerEntry = {
+        id: editingEntryId || "temp-" + Date.now(),
+        date: entryDate,
+        party: combinedParty,
+        station: entryStation,
+        amount: newAmount,
+        discount: newDiscount,
+        taxOrPaid: newTaxOrPaid,
+        netAmount: newNetAmount,
+        items: entryItems,
+        payment: newPayment,
+        type: entryType,
+        paymentMode: entryType === "payment" ? entryPaymentMode : undefined
+      }
+
+      if (editingEntryId) {
+        setStagedLedger(prev => prev.map(e => e.id === editingEntryId ? entryData : e))
+      } else {
+        setStagedLedger(prev => [...prev, entryData])
+      }
+      
+      resetEntryForm()
     }
-    
-    resetEntryForm()
   }
 
   const handleDeleteLedgerEntry = (entryId: string) => {
@@ -220,12 +275,10 @@ export function AccountsPage() {
     toast.info("Changes discarded")
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Math.abs(amount))
-  }
+  const formatCurrency = (amount: number) => globalFormatCurrency(Math.abs(amount), activeOrg?.currency)
 
-  const totalReceivable = accounts.filter((a) => a.balance > 0).reduce((sum, a) => sum + a.balance, 0)
-  const totalPayable = accounts.filter((a) => a.balance < 0).reduce((sum, a) => sum + Math.abs(a.balance), 0)
+  const totalReceivable = accounts.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0)
+  const totalPayable = accounts.reduce((sum, a) => sum + (a.balance < 0 ? Math.abs(a.balance) : 0), 0)
 
   // Sort and filter staged ledger
   const sortedLedger = stagedLedger
@@ -283,32 +336,25 @@ export function AccountsPage() {
     const exportLedgerPayment = entriesToExport.reduce((sum, e) => sum + (e.payment || 0), 0)
     const finalNetBalance = exportLedgerNet - exportLedgerPayment
 
-    // Format Data matching screenshot strictly
-    const tableData: any[] = []
-    
-    // Auto-opening balance removed as per request.
-
-    entriesToExport.forEach(entry => {
-      const partyStr = entry.type === "payment" && entry.paymentMode 
-        ? `${entry.paymentMode} - ${entry.party}` 
-        : entry.party || ""
-        
-      tableData.push([
+    const tableData = entriesToExport.map(entry => {
+      const sp = splitParty(entry.party || "");
+      return [
         new Date(entry.date).toLocaleDateString('en-GB'),
-        partyStr,
+        sp.invNo,
+        sp.party + (entry.type === 'payment' && entry.paymentMode ? `\n(${entry.paymentMode})` : ""),
         entry.station || "",
-        entry.amount ? formatCurrency(entry.amount).replace('₹','') : "",
-        entry.discount ? `-${formatCurrency(entry.discount).replace('₹','')}` : "",
-        entry.taxOrPaid ? formatCurrency(entry.taxOrPaid).replace('₹','') : "",
-        entry.netAmount ? formatCurrency(entry.netAmount).replace('₹','') : "",
+        entry.amount ? formatCurrency(entry.amount) : "",
+        entry.discount ? `-${formatCurrency(entry.discount)}` : "",
+        entry.taxOrPaid ? formatCurrency(entry.taxOrPaid) : "",
+        entry.netAmount ? formatCurrency(entry.netAmount) : "",
         entry.items || "",
-        entry.payment ? formatCurrency(entry.payment).replace('₹','') : ""
-      ])
+        entry.payment ? formatCurrency(entry.payment) : ""
+      ]
     })
 
     autoTable(doc, {
       startY: 45,
-      head: [['Date', 'Party', 'Station', 'Amount', 'Discount', 'Tax/Paid', 'Net Amount', 'ITEMS', 'Payment']],
+      head: [['Date', 'Inv No', 'Party', 'Station', 'Amount', 'Discount', 'Taxes+Expense', 'Net Amount', 'ITEMS', 'Payment']],
       body: tableData,
       theme: 'grid',
       headStyles: { 
@@ -325,19 +371,20 @@ export function AccountsPage() {
         fontSize: 9
       },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 22 }, // Date
-        1: { halign: 'left' },                 // Party
-        2: { halign: 'center' },               // Station
-        3: { halign: 'right' },                // Amount
-        4: { halign: 'right' },                // Discount
-        5: { halign: 'right' },                // Tax/Paid
-        6: { halign: 'right', fontStyle: 'bold' }, // Net Amount
-        7: { halign: 'center' },               // Items
-        8: { halign: 'right', fontStyle: 'bold' }  // Payment
+        0: { halign: 'center', cellWidth: 20 }, // Date
+        1: { halign: 'center', cellWidth: 20 }, // Inv No
+        2: { halign: 'left' },                  // Party
+        3: { halign: 'center' },                // Station
+        4: { halign: 'right' },                 // Amount
+        5: { halign: 'right' },                 // Discount
+        6: { halign: 'right' },                 // Taxes+Expense
+        7: { halign: 'right', fontStyle: 'bold' }, // Net Amount
+        8: { halign: 'center' },                // Items
+        9: { halign: 'right', fontStyle: 'bold' }  // Payment
       },
       didParseCell: (data) => {
         // Style 'OLD BALANCE' rows with yellow highlight
-        const partyCell = data.row.cells[1]?.text?.[0] || ""
+        const partyCell = data.row.cells[2]?.text?.[0] || ""
         if (partyCell.toUpperCase().includes("OLD BALANCE") || partyCell.toUpperCase().includes("OPENING BALANCE")) {
           data.cell.styles.fillColor = [255, 255, 0] // Yellow
           data.cell.styles.fontStyle = 'bold'
@@ -347,17 +394,18 @@ export function AccountsPage() {
         [
           '', 
           '', 
-          'TOTAL',
-          exportLedgerAmount ? formatCurrency(exportLedgerAmount).replace('₹','') : "", 
-          exportLedgerDiscount ? `-${formatCurrency(exportLedgerDiscount).replace('₹','')}` : "", 
-          exportLedgerTax ? formatCurrency(exportLedgerTax).replace('₹','') : "", 
-          exportLedgerNet ? formatCurrency(exportLedgerNet).replace('₹','') : "", 
           '', 
-          exportLedgerPayment ? formatCurrency(exportLedgerPayment).replace('₹','') : ""
+          'TOTAL',
+          exportLedgerAmount ? formatCurrency(exportLedgerAmount) : "", 
+          exportLedgerDiscount ? `-${formatCurrency(exportLedgerDiscount)}` : "", 
+          exportLedgerTax ? formatCurrency(exportLedgerTax) : "", 
+          exportLedgerNet ? formatCurrency(exportLedgerNet) : "", 
+          '', 
+          exportLedgerPayment ? formatCurrency(exportLedgerPayment) : ""
         ],
         [
-          { content: 'NET BALANCE:', colSpan: 6, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 5 } },
-          { content: formatCurrency(finalNetBalance).replace('₹',''), colSpan: 3, styles: { halign: 'right', fontSize: 24, fontStyle: 'bold', cellPadding: 5 } }
+          { content: 'NET BALANCE:', colSpan: 7, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 5 } },
+          { content: formatCurrency(finalNetBalance, { showSign: true }), colSpan: 3, styles: { halign: 'right', fontSize: 24, fontStyle: 'bold', cellPadding: 5 } }
         ]
       ],
       footStyles: { 
@@ -485,9 +533,19 @@ export function AccountsPage() {
                 <Input placeholder="e.g. Location Code" value={newAccountStation ?? ''} onChange={(e) => setNewAccountStation(e.target.value)} className="rounded-xl h-12 bg-muted border-0" />
               </div>
               <div className="space-y-2">
+                <label className="text-sm font-medium">Category</label>
+                <div className="flex gap-2">
+                  {(["Customer", "Supplier"] as const).map((cat) => (
+                    <Button key={cat} type="button" variant={newAccountCategory === cat ? "default" : "outline"} onClick={() => setNewAccountCategory(cat)} className={cn("flex-1 rounded-xl h-12", newAccountCategory === cat ? "bg-primary" : "bg-transparent")}>
+                      {cat}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Account Type</label>
                 <div className="flex gap-2">
-                  {(["Direct Agent", "Agency"] as const).map((type) => (
+                  {(["Direct", "Agency"] as const).map((type) => (
                     <Button key={type} type="button" variant={newAccountType === type ? "default" : "outline"} onClick={() => setNewAccountType(type)} className={cn("flex-1 rounded-xl h-12", newAccountType === type ? "bg-primary" : "bg-transparent")}>
                       {type}
                     </Button>
@@ -505,20 +563,45 @@ export function AccountsPage() {
         </Dialog>
       </div>
 
-      {/* Account Table */}
-      <div className="bg-card rounded-2xl border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="text-left p-4 text-sm font-semibold text-muted-foreground w-1/3">Account Details</th>
-                <th className="text-left p-4 text-sm font-semibold text-muted-foreground">Type</th>
-                <th className="text-right p-4 text-sm font-semibold text-muted-foreground">Net Balance</th>
-                <th className="text-center p-4 text-sm font-semibold text-muted-foreground w-32">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAccounts.map((account, index) => (
+      {/* Category Tabs */}
+      <div className="flex gap-2 mb-6">
+        <Button 
+          variant={activeCategoryTab === "Customer" ? "default" : "outline"} 
+          onClick={() => setActiveCategoryTab("Customer")}
+          className="rounded-xl flex-1 sm:flex-none"
+        >
+          Customers
+        </Button>
+        <Button 
+          variant={activeCategoryTab === "Supplier" ? "default" : "outline"} 
+          onClick={() => setActiveCategoryTab("Supplier")}
+          className="rounded-xl flex-1 sm:flex-none"
+        >
+          Suppliers
+        </Button>
+      </div>
+
+      {/* Account Tables */}
+      <div className="space-y-8">
+        {[
+          { title: `${activeCategoryTab}s - Direct`, data: filteredAccounts.filter(a => (a.category || "Customer") === activeCategoryTab && a.type === "Direct") },
+          { title: `${activeCategoryTab}s - Agencies`, data: filteredAccounts.filter(a => (a.category || "Customer") === activeCategoryTab && a.type === "Agency") }
+        ].map((group, groupIndex) => (
+          <div key={groupIndex}>
+            <h3 className="text-lg font-semibold text-foreground mb-3 px-1">{group.title}</h3>
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50">
+                      <th className="text-left p-4 text-sm font-semibold text-muted-foreground w-1/3">Account Details</th>
+                      <th className="text-left p-4 text-sm font-semibold text-muted-foreground">Type</th>
+                      <th className="text-right p-4 text-sm font-semibold text-muted-foreground">Net Balance</th>
+                      <th className="text-center p-4 text-sm font-semibold text-muted-foreground w-32">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.data.map((account, index) => (
                 <tr key={account.id} className={cn("border-b border-border/50 hover:bg-muted/30 transition-colors", index === filteredAccounts.length - 1 && "border-b-0")}>
                   <td className="p-4">
                     <div className="flex flex-col">
@@ -534,7 +617,6 @@ export function AccountsPage() {
                   <td className="p-4 text-right">
                     <div className="flex flex-col items-end">
                       <span className={cn("font-bold text-lg font-mono", account.balance > 0 ? "text-accent" : account.balance < 0 ? "text-destructive" : "text-muted-foreground")}>
-                        {account.balance > 0 ? "+" : account.balance < 0 ? "-" : ""}
                         {formatCurrency(account.balance)}
                       </span>
                       <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
@@ -624,11 +706,12 @@ export function AccountsPage() {
                                       </th>
                                     )}
                                     <th className="p-3 text-left font-semibold text-foreground min-w-32">DATE</th>
-                                    <th className="p-3 text-left font-semibold text-foreground min-w-40">INVOICE NO / PARTY</th>
+                                    <th className="p-3 text-left font-semibold text-foreground min-w-32">INV NO</th>
+                                    <th className="p-3 text-left font-semibold text-foreground min-w-40">PARTY</th>
                                     <th className="p-3 text-left font-semibold text-foreground min-w-32">STATION</th>
                                     <th className="p-3 text-right font-semibold text-foreground min-w-28">AMOUNT</th>
                                     <th className="p-3 text-right font-semibold text-foreground min-w-24">DISCOUNT</th>
-                                    <th className="p-3 text-right font-semibold text-foreground min-w-24">Tax/Paid</th>
+                                    <th className="p-3 text-right font-semibold text-foreground min-w-24">Taxes+Expense</th>
                                     <th className="p-3 text-right font-semibold text-foreground min-w-32">NET AMOUNT</th>
                                     <th className="p-3 text-left font-semibold text-foreground min-w-32">ITEMS</th>
                                     <th className="p-3 text-right font-semibold text-foreground min-w-32">PAYMENT</th>
@@ -654,8 +737,13 @@ export function AccountsPage() {
                                       <td className="p-3 font-mono text-xs">
                                         {new Date(entry.date).toLocaleDateString('en-GB')}
                                       </td>
+                                      <td className="p-3">
+                                        {splitParty(entry.party).invNo !== "-" && (
+                                          <span className="font-semibold text-xs bg-muted px-2 py-1 rounded">{splitParty(entry.party).invNo}</span>
+                                        )}
+                                      </td>
                                       <td className="p-3 flex flex-col">
-                                        <span>{entry.party}</span>
+                                        <span>{splitParty(entry.party).party}</span>
                                         {entry.type === "payment" && entry.paymentMode && (
                                           <span className="text-[10px] uppercase text-accent font-semibold">{entry.paymentMode}</span>
                                         )}
@@ -683,7 +771,7 @@ export function AccountsPage() {
                                   {/* Subtotals Row */}
                                   {sortedLedger.length > 0 && (
                                     <tr className="bg-muted/40 font-semibold border-b border-border text-xs uppercase tracking-wider">
-                                      <td className="p-3 text-muted-foreground" colSpan={3}>Subtotals</td>
+                                      <td className="p-3 text-muted-foreground" colSpan={isSelectionMode ? 5 : 4}>Subtotals</td>
                                       <td className="p-3 text-right">{totalLedgerAmount ? formatCurrency(totalLedgerAmount) : "-"}</td>
                                       <td className="p-3 text-right text-destructive">{totalLedgerDiscount ? formatCurrency(totalLedgerDiscount) : "-"}</td>
                                       <td className="p-3 text-right text-warning">{totalLedgerTax ? formatCurrency(totalLedgerTax) : "-"}</td>
@@ -696,7 +784,7 @@ export function AccountsPage() {
 
                                   {/* Input Row for New/Edit */}
                                   <tr className="border-t border-border bg-muted/80">
-                                    <td colSpan={isSelectionMode ? 11 : 10} className="p-3">
+                                    <td colSpan={isSelectionMode ? 12 : 11} className="p-3">
                                       <div className="flex flex-wrap gap-4 items-center">
                                         <span className="text-sm font-semibold text-foreground">Entry Controls:</span>
                                         <div className="flex gap-2">
@@ -717,15 +805,18 @@ export function AccountsPage() {
                                     {isSelectionMode && <td className="p-2"></td>}
                                     <td className="p-2"><Input type="date" value={entryDate ?? ''} onChange={(e) => setEntryDate(e.target.value)} className="h-9 w-32 text-xs" /></td>
                                     <td className="p-2">
-                                      <Input placeholder="Inv No / Name" value={entryParty ?? ''} onChange={(e) => setEntryParty(e.target.value)} className="h-9 w-full min-w-32 text-xs" />
+                                      <Input placeholder="Inv No" value={entryInvoiceNo ?? ''} onChange={(e) => setEntryInvoiceNo(e.target.value)} className="h-9 w-full min-w-24 text-xs" />
+                                    </td>
+                                    <td className="p-2">
+                                      <Input placeholder="Party Name" value={entryParty ?? ''} onChange={(e) => setEntryParty(e.target.value)} className="h-9 w-full min-w-32 text-xs" />
                                     </td>
                                     <td className="p-2"><Input placeholder="Station" value={entryStation ?? ''} onChange={(e) => setEntryStation(e.target.value)} className="h-9 w-full min-w-24 text-xs" /></td>
-                                    <td className="p-2"><Input type="number" placeholder="₹" value={entryAmount ?? ''} onChange={(e) => setEntryAmount(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-24 text-right text-xs" /></td>
-                                    <td className="p-2"><Input type="number" placeholder="₹" value={entryDiscount ?? ''} onChange={(e) => setEntryDiscount(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-20 text-right text-xs" /></td>
-                                    <td className="p-2"><Input type="number" placeholder="₹" value={entryTaxOrPaid ?? ''} onChange={(e) => setEntryTaxOrPaid(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-20 text-right text-xs" /></td>
+                                    <td className="p-2"><Input type="number" placeholder="Amt" value={entryAmount ?? ''} onChange={(e) => setEntryAmount(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-24 text-right text-xs" /></td>
+                                    <td className="p-2"><Input type="number" placeholder="Disc" value={entryDiscount ?? ''} onChange={(e) => setEntryDiscount(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-20 text-right text-xs" /></td>
+                                    <td className="p-2"><Input type="number" placeholder="Tax" value={entryTaxOrPaid ?? ''} onChange={(e) => setEntryTaxOrPaid(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-20 text-right text-xs" /></td>
                                     <td className="p-2 text-right font-bold px-4">{currentNetAmount ? formatCurrency(currentNetAmount) : "-"}</td>
                                     <td className="p-2"><Input placeholder="" value={entryItems ?? ''} onChange={(e) => setEntryItems(e.target.value)} className="h-9 w-full min-w-24 text-xs" /></td>
-                                    <td className="p-2"><Input type="number" placeholder="₹" value={entryPayment ?? ''} onChange={(e) => setEntryPayment(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-24 text-right text-xs" /></td>
+                                    <td className="p-2"><Input type="number" placeholder="Paid" value={entryPayment ?? ''} onChange={(e) => setEntryPayment(e.target.value === '' ? '' : Number(e.target.value))} className="h-9 w-full min-w-24 text-right text-xs" /></td>
                                     <td className="p-2 text-center">
                                       <div className="flex items-center gap-2 justify-center">
                                         <Button 
@@ -775,7 +866,7 @@ export function AccountsPage() {
                                     "text-3xl md:text-4xl font-bold font-mono tracking-tight",
                                     currentStagedBalance > 0 ? "text-accent" : currentStagedBalance < 0 ? "text-destructive" : "text-foreground"
                                   )}>
-                                    ₹ {Math.abs(currentStagedBalance).toLocaleString('en-IN')}
+                                    {formatCurrency(currentStagedBalance)}
                                   </span>
                                 </div>
                             </div>
@@ -849,18 +940,21 @@ export function AccountsPage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        {filteredAccounts.length === 0 && (
-          <div className="p-12 text-center">
-            <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No accounts found</p>
+            {group.data.length === 0 && (
+              <div className="p-12 text-center">
+                <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">No accounts found in this category.</p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+        ))}
       </div>
     </div>
   )

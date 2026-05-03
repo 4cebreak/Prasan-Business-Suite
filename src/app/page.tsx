@@ -8,7 +8,8 @@ import { AccountsPage } from "@/components/accounts-page"
 import dynamic from "next/dynamic"
 const InvoicesPage = dynamic(() => import('@/components/invoices-page').then(mod => mod.InvoicesPage), { ssr: false })
 import { SettingsPage } from "@/components/settings-page"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+const InventoryPage = dynamic(() => import('@/components/inventory-page').then(mod => mod.InventoryPage), { ssr: false })
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -20,7 +21,7 @@ const pageConfig = {
   },
   accounts: {
     title: "Ledgers",
-    subtitle: "Manage your Direct Agents and Agency customers",
+    subtitle: "Manage your Direct and Agency customers",
     component: AccountsPage,
   },
   invoices: {
@@ -33,16 +34,30 @@ const pageConfig = {
     subtitle: "Configure your preferences",
     component: SettingsPage,
   },
+  inventory: {
+    title: "Inventory",
+    subtitle: "Manage Raw Materials, WIP, and Finished Goods",
+    component: InventoryPage,
+  },
 }
 
 import { useStore } from "@/lib/store"
+import { useEffect } from "react"
 
 export default function Home() {
   const { organization } = useStore()
-  const [activeTab, setActiveTab] = useState<keyof typeof pageConfig>("dashboard")
+  const [activeTab, setActiveTab] = useState<keyof typeof pageConfig | string>("dashboard")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const currentPage = pageConfig[activeTab]
+  useEffect(() => {
+    const handleOpenInvoiceEdit = () => {
+      setActiveTab("invoices")
+    }
+    window.addEventListener("openInvoiceEdit", handleOpenInvoiceEdit)
+    return () => window.removeEventListener("openInvoiceEdit", handleOpenInvoiceEdit)
+  }, [])
+
+  const currentPage = pageConfig[activeTab as keyof typeof pageConfig] || pageConfig.dashboard
   const PageComponent = currentPage.component
   const dynamicSubtitle = currentPage.subtitle === "Overview of Parasnath Jeans" ? `Overview of ${organization}` : currentPage.subtitle
 
@@ -56,6 +71,8 @@ export default function Home() {
       {/* Mobile Sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
+          <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+          <SheetDescription className="sr-only">Access different sections of the ERP system.</SheetDescription>
           <Sidebar
             activeTab={activeTab}
             onTabChange={(tab) => {
