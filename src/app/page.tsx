@@ -12,6 +12,8 @@ const InventoryPage = dynamic(() => import('@/components/inventory-page').then(m
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { BarcodePage } from "@/components/barcode-page"
+
 
 const pageConfig = {
   dashboard: {
@@ -38,6 +40,11 @@ const pageConfig = {
     title: "Inventory",
     subtitle: "Manage Raw Materials, WIP, and Finished Goods",
     component: InventoryPage,
+  },
+  barcodes: {
+    title: "Barcode Generator",
+    subtitle: "Generate and print labels for your products",
+    component: BarcodePage,
   },
 }
 

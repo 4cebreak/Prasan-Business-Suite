@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Package,
+  Barcode,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
@@ -23,6 +24,7 @@ const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "accounts", label: "Ledgers", icon: Users },
   { id: "invoices", label: "Invoices", icon: FileText },
+  { id: "barcodes", label: "Barcodes", icon: Barcode },
 ]
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
