@@ -1,10 +1,16 @@
 import bwipjs from "bwip-js"
 
-export const printBarcodes = (items: Array<{ brand?: string, style: string, size?: string, rate: number, qty: number }>) => {
+export const printBarcodes = (items: Array<{ 
+  brand?: string, 
+  style: string, 
+  size?: string, 
+  rate: number, 
+  qty: number,
+  customFields?: Array<{ key: string, value: string }>
+}>) => {
   const printWindow = window.open('', '_blank')
   if (!printWindow) return
 
-  // Create a temporary canvas for each barcode to get the data URL
   const generateBarcodeUrl = (text: string) => {
     const canvas = document.createElement('canvas')
     try {
@@ -24,14 +30,18 @@ export const printBarcodes = (items: Array<{ brand?: string, style: string, size
 
   const labelsHtml = items.map(item => {
     const barcodeUrl = generateBarcodeUrl(`${item.style}|${item.size || ''}|${item.rate}`)
+    const customHtml = (item.customFields || []).map(cf => `<span style="margin-right: 5px;">${cf.key.toUpperCase()}: ${cf.value}</span>`).join(' | ')
+    
     return Array(item.qty || 1).fill(0).map(() => `
       <div class="label">
         <div class="brand">${(item.brand || "PRASAN").toUpperCase()}</div>
         <div class="details">STYLE: ${item.style} | SIZE: ${item.size || ''} | RATE: ${item.rate}</div>
+        ${customHtml ? `<div class="details">${customHtml}</div>` : ''}
         <img src="${barcodeUrl}" />
       </div>
     `).join('')
   }).join('')
+
 
   printWindow.document.write(`
     <html>

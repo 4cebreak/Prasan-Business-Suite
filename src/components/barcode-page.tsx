@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Printer, Barcode, RefreshCw, Layers } from "lucide-react"
+import { Printer, Barcode, RefreshCw, Layers, Plus, Trash2 } from "lucide-react"
+
 import { printBarcodes } from "@/lib/barcode-utils"
 import bwipjs from "bwip-js"
 
@@ -17,6 +18,8 @@ export function BarcodePage() {
     rate: "",
     qty: "1"
   })
+  const [customFields, setCustomFields] = useState<{ key: string, value: string }[]>([])
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -46,9 +49,27 @@ export function BarcodePage() {
       style: barcodeData.style,
       size: barcodeData.size,
       rate: Number(barcodeData.rate) || 0,
-      qty: Number(barcodeData.qty) || 1
+      qty: Number(barcodeData.qty) || 1,
+      customFields
     }])
   }
+
+  const addCustomField = () => {
+    if (customFields.length < 3) {
+      setCustomFields([...customFields, { key: "", value: "" }])
+    }
+  }
+
+  const updateCustomField = (index: number, key: string, value: string) => {
+    const newFields = [...customFields]
+    newFields[index] = { key, value }
+    setCustomFields(newFields)
+  }
+
+  const removeCustomField = (index: number) => {
+    setCustomFields(customFields.filter((_, i) => i !== index))
+  }
+
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto pb-24">
@@ -106,7 +127,51 @@ export function BarcodePage() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-4 pt-4 border-t border-border/50">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold uppercase text-muted-foreground">Custom Fields (Max 3)</Label>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={addCustomField} 
+                  disabled={customFields.length >= 3}
+                  className="h-7 px-2 text-xs gap-1"
+                >
+                  <Plus className="w-3 h-3" /> Add Field
+                </Button>
+              </div>
+              
+              {customFields.map((field, idx) => (
+                <div key={idx} className="flex gap-2 items-end">
+                  <div className="flex-1 space-y-1">
+                    <Input 
+                      placeholder="Label (e.g. Color)" 
+                      value={field.key} 
+                      className="h-8 text-xs"
+                      onChange={(e) => updateCustomField(idx, e.target.value, field.value)}
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <Input 
+                      placeholder="Value" 
+                      value={field.value} 
+                      className="h-8 text-xs"
+                      onChange={(e) => updateCustomField(idx, field.key, e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => removeCustomField(idx)}
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2 pt-2">
               <Label htmlFor="qty">Number of Labels to Print</Label>
               <Input 
                 id="qty" 
@@ -116,6 +181,7 @@ export function BarcodePage() {
                 onChange={(e) => setBarcodeData({...barcodeData, qty: e.target.value})}
               />
             </div>
+
 
             <Button className="w-full gap-2 mt-4 shadow-lg shadow-primary/20" onClick={handlePrint}>
               <Printer className="w-4 h-4" />
@@ -129,9 +195,17 @@ export function BarcodePage() {
           <div className="text-center space-y-4">
             <div className="bg-white p-6 rounded-lg shadow-inner flex flex-col items-center">
               <div className="text-slate-900 font-bold mb-1 text-lg">{barcodeData.brand.toUpperCase() || "PRASAN"}</div>
-              <div className="text-slate-600 text-xs mb-4 uppercase tracking-wider font-medium">
+              <div className="text-slate-600 text-xs mb-1 uppercase tracking-wider font-medium">
                 {barcodeData.style} | Size: {barcodeData.size} | ₹{barcodeData.rate}
               </div>
+              {customFields.length > 0 && (
+                <div className="text-[10px] text-slate-500 mb-4 flex flex-wrap justify-center gap-1">
+                  {customFields.map((f, i) => f.key && f.value && (
+                    <span key={i}>{f.key.toUpperCase()}: {f.value} {i < customFields.length - 1 ? '|' : ''}</span>
+                  ))}
+                </div>
+              )}
+
               <canvas ref={canvasRef} className="max-w-full h-auto"></canvas>
             </div>
             <div className="flex items-center justify-center gap-2 text-primary font-medium">
