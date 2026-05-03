@@ -94,14 +94,15 @@ export async function serverSetMasterPasswordHash(password: string, orgId?: stri
 // -------------------------------------------------------------------------------- //
 
 export async function fetchStoreContext(orgId: string) {
-  // We don't strictly protect fetch for now to allow initial load, 
-  // but we ensure only data for the requested org is returned.
+  // STRICT: Verify the session belongs to the requested Org
+  await verifySession(orgId)
+
   const organizations = await prisma.organization.findMany({
     select: { id: true, name: true, gstNumber: true, panNumber: true, address: true, city: true, state: true, linkInvoicesLedgers: true, linkInvoicesChanged: true, inventoryEnabled: true, strictInventoryInvoicing: true, currency: true, invoiceShowBrandName: true, invoiceShowSize: true, invoiceBrandNameLabel: true, invoiceSizeLabel: true, taxMode: true, taxPercentage: true }
   })
   
-  const activeOrg = organizations.find((o) => o.id === orgId) || organizations[0]
-  if (!activeOrg) return { organizations: [], accounts: [], invoices: [] }
+  const activeOrg = organizations.find((o) => o.id === orgId)
+  if (!activeOrg) throw new Error("Unauthorized access to organization data")
 
   const [accounts, invoices, rawMaterials, wipGoods, finishedGoods] = await Promise.all([
     prisma.account.findMany({ where: { orgId: activeOrg.id }, include: { ledger: true } }),
@@ -114,9 +115,13 @@ export async function fetchStoreContext(orgId: string) {
   return { organizations, accounts, invoices, rawMaterials, wipGoods, finishedGoods }
 }
 
+
 export async function serverAddInvoice(orgId: string, invoicePayload: any) {
   await verifySession(orgId)
   const { items, ...inv } = invoicePayload
+  
+  // Validation
+  if (!items || !Array.isArray(items) || items.length === 0) throw new Error("Invoice must have items")
   const date = inv.date ? new Date(inv.date) : new Date()
   
   return await prisma.$transaction(async (tx) => {
@@ -132,7 +137,7 @@ export async function serverAddInvoice(orgId: string, invoicePayload: any) {
           }
           await tx.finishedGood.update({
             where: { id: item.finishedGoodId },
-            data: { qty: { decrement: item.qty } }
+            data: { qty: { decrement: Math.max(0, item.qty) } }
           })
         }
       }
@@ -145,12 +150,18 @@ export async function serverAddInvoice(orgId: string, invoicePayload: any) {
         date,
         orgId,
         items: {
-          create: items.map(({ id: _id, ...item }: any) => item)
+          create: items.map(({ id: _id, ...item }: any) => ({
+             ...item,
+             qty: Math.max(0, Number(item.qty) || 0),
+             rate: Math.max(0, Number(item.rate) || 0),
+             amount: Math.max(0, Number(item.amount) || 0)
+          }))
         }
       }
     })
   })
 }
+
 
 export async function serverUpdateInvoice(id: string, updates: any) {
   const inv = await prisma.invoice.findUnique({ 

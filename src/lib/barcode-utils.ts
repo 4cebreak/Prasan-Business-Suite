@@ -1,5 +1,15 @@
 import bwipjs from "bwip-js"
 
+const escapeHtml = (str: string) => {
+  return str.replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m] || m))
+}
+
 export const printBarcodes = (items: Array<{ 
   brand?: string, 
   style: string, 
@@ -30,17 +40,18 @@ export const printBarcodes = (items: Array<{
 
   const labelsHtml = items.map(item => {
     const barcodeUrl = generateBarcodeUrl(`${item.style}|${item.size || ''}|${item.rate}`)
-    const customHtml = (item.customFields || []).map(cf => `<span style="margin-right: 5px;">${cf.key.toUpperCase()}: ${cf.value}</span>`).join(' | ')
+    const customHtml = (item.customFields || []).map(cf => `<span style="margin-right: 5px;">${escapeHtml(cf.key.toUpperCase())}: ${escapeHtml(cf.value)}</span>`).join(' | ')
     
     return Array(item.qty || 1).fill(0).map(() => `
       <div class="label">
-        <div class="brand">${(item.brand || "PRASAN").toUpperCase()}</div>
-        <div class="details">STYLE: ${item.style} | SIZE: ${item.size || ''} | RATE: ${item.rate}</div>
+        <div class="brand">${escapeHtml((item.brand || "PRASAN").toUpperCase())}</div>
+        <div class="details">STYLE: ${escapeHtml(item.style)} | SIZE: ${escapeHtml(item.size || '')} | RATE: ${item.rate}</div>
         ${customHtml ? `<div class="details">${customHtml}</div>` : ''}
         <img src="${barcodeUrl}" />
       </div>
     `).join('')
   }).join('')
+
 
 
   printWindow.document.write(`
