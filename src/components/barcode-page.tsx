@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Printer, Barcode, RefreshCw, Layers } from "lucide-react"
+import { printBarcodes } from "@/lib/barcode-utils"
 import bwipjs from "bwip-js"
 
 export function BarcodePage() {
@@ -40,63 +41,13 @@ export function BarcodePage() {
   }, [barcodeData])
 
   const handlePrint = () => {
-    const printWindow = window.open('', '_blank')
-    if (!printWindow) return
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const dataUrl = canvas.toDataURL()
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Barcodes</title>
-          <style>
-            @page { size: auto; margin: 0; }
-            body { 
-              margin: 0; 
-              display: flex; 
-              flex-wrap: wrap; 
-              justify-content: center;
-              font-family: sans-serif;
-            }
-            .label {
-              width: 2in;
-              height: 1in;
-              padding: 10px;
-              border: 1px dashed #ccc;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              page-break-inside: avoid;
-            }
-            .brand { font-weight: bold; font-size: 14px; margin-bottom: 2px; }
-            .details { font-size: 10px; margin-bottom: 5px; }
-            img { width: 100%; height: auto; }
-            @media print {
-              .label { border: none; }
-            }
-          </style>
-        </head>
-        <body>
-          ${Array(parseInt(barcodeData.qty || "1")).fill(0).map(() => `
-            <div class="label">
-              <div class="brand">${barcodeData.brand.toUpperCase() || "PRASAN"}</div>
-              <div class="details">STYLE: ${barcodeData.style} | SIZE: ${barcodeData.size} | RATE: ${barcodeData.rate}</div>
-              <img src="${dataUrl}" />
-            </div>
-          `).join('')}
-          <script>
-            window.onload = () => {
-              window.print();
-              window.close();
-            }
-          </script>
-        </body>
-      </html>
-    `)
-    printWindow.document.close()
+    printBarcodes([{
+      brand: barcodeData.brand,
+      style: barcodeData.style,
+      size: barcodeData.size,
+      rate: Number(barcodeData.rate) || 0,
+      qty: Number(barcodeData.qty) || 1
+    }])
   }
 
   return (

@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Plus, FileText, Download, Edit2, Eye, MoreHorizontal, CheckCircle, Clock, XCircle, Trash2 } from "lucide-react"
+import { Search, Plus, FileText, Download, Edit2, Eye, MoreHorizontal, CheckCircle, Clock, XCircle, Trash2, Barcode } from "lucide-react"
+import { printBarcodes } from "@/lib/barcode-utils"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -852,6 +854,9 @@ export function InvoicesPage() {
                           )}
                           <DropdownMenuItem className="rounded-lg gap-2" onClick={() => generatePDF(invoice)}>
                             <Download className="w-4 h-4" /> Download PDF
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="rounded-lg gap-2 font-medium text-primary bg-primary/5" onClick={() => printBarcodes(invoice.items)}>
+                            <Barcode className="w-4 h-4" /> Print Barcodes
                           </DropdownMenuItem>
                           <DropdownMenuItem className="rounded-lg gap-2 text-destructive" onClick={() => handleDeleteInvoice(invoice)}>
                             <Trash2 className="w-4 h-4" /> Delete Invoice
