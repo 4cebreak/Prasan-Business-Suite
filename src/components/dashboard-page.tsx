@@ -120,7 +120,7 @@ export function DashboardPage() {
     .sort((a, b) => b.balance - a.balance)
     .slice(0, 3)
 
-  const formatCurrency = (amount: number) => globalFormatCurrency(Math.abs(amount), activeOrg?.currency)
+  const formatCurrency = (amount: number) => globalFormatCurrency(Math.abs(amount))
 
   const maxBalance = Math.max(...topCustomersData.map(c => c.balance), 1)
 

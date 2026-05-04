@@ -163,51 +163,29 @@ export function InvoicesPage() {
 
   const handleSaveInvoice = async () => {
     if (customerName && invoiceNo && items.length > 0) {
-      if (activeOrg?.strictInventoryInvoicing) {
-        for (const item of items) {
-          if (!item.finishedGoodId) {
-            toast.error("Strict inventory is enabled. Please select a finished good from stock for all items.")
-            return
-          }
-        }
-      }
-
-      // Stock Logic - aggregate all changes into a delta dictionary first
-      const stockDelta: Record<string, number> = {} // fgId -> net quantity change (positive = deduct from stock)
-      
-      if (editingInvoiceId) {
-        const existingInv = invoices.find(i => i.id === editingInvoiceId)
-        if (existingInv) {
-          // Restore old stock (negative delta = add back)
-          for (const oldItem of existingInv.items) {
-            const fgId = (oldItem as any).finishedGoodId
-            if (fgId) {
-              stockDelta[fgId] = (stockDelta[fgId] || 0) - (oldItem.qty || 0)
-            }
-          }
-        }
-      }
-      
-      // Deduct new stock (positive delta = remove from stock)
-      for (const newItem of items) {
-        if (newItem.finishedGoodId) {
-          stockDelta[newItem.finishedGoodId] = (stockDelta[newItem.finishedGoodId] || 0) + (newItem.qty || 0)
-        }
-      }
-      
-      // Apply all deltas at once
-      for (const [fgId, delta] of Object.entries(stockDelta)) {
-        if (delta !== 0) {
-          const fg = finishedGoods.find(f => f.id === fgId)
-          if (fg) {
-            await updateFinishedGood(fg.id, { qty: Math.max(0, fg.qty - delta) })
-          }
-        }
-      }
       const parts = dateStr.split('/')
       let dateValue = new Date()
       if (parts.length === 3) {
         dateValue = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]))
+      }
+
+      // Determine the target Account ID for linking
+      let accountId: string | undefined = undefined
+      if (activeOrg?.linkInvoicesLedgers) {
+        const accNameToMatch = agencyName || customerName
+        const existing = accounts.find(a => a.name === accNameToMatch)
+        
+        if (existing) {
+          accountId = existing.id
+        } else if (isNewCustomer && !editingInvoiceId) {
+          // Create the account first if it's new
+          accountId = await addAccount({
+            name: accNameToMatch,
+            category: "Customer",
+            type: newCustomerType,
+            station: city
+          })
+        }
       }
 
       const invoiceData = {
@@ -225,77 +203,20 @@ export function InvoicesPage() {
         subtotal,
         discount: Number(discount) || 0,
         taxes: effectiveTaxes,
-        grandTotal
+        grandTotal,
+        accountId // NEW: Pass the accountId for server-side linking
       }
 
-      const isLinked = activeOrg?.linkInvoicesLedgers
-      let targetAccountId: string | undefined = undefined
-
-      if (isLinked && !editingInvoiceId) {
-        if (isNewCustomer) {
-          targetAccountId = await addAccount({
-            name: newCustomerType === "Agency" ? agencyName : customerName,
-            category: "Customer",
-            type: newCustomerType,
-            station: city
-          })
+      try {
+        if (editingInvoiceId) {
+          await updateInvoice(editingInvoiceId, invoiceData)
         } else {
-          const accNameToMatch = agencyName || customerName
-          const existing = accounts.find(a => a.name === accNameToMatch)
-          targetAccountId = existing?.id
+          await addInvoice(invoiceData)
         }
-      } else if (isLinked && editingInvoiceId) {
-        const existingInv = invoices.find(i => i.id === editingInvoiceId)
-        if (existingInv?.ledgerEntryId) {
-          const acc = accounts.find(a => a.ledger.some(l => l.id === existingInv.ledgerEntryId))
-          targetAccountId = acc?.id
-        }
+        setIsDialogOpen(false)
+      } catch (err: any) {
+        toast.error(err.message || "Operation failed")
       }
-
-      if (editingInvoiceId) {
-        await updateInvoice(editingInvoiceId, invoiceData)
-        if (targetAccountId && isLinked) {
-          const existingInv = invoices.find(i => i.id === editingInvoiceId)
-          if (existingInv?.ledgerEntryId) {
-            await updateLedgerEntry(targetAccountId, existingInv.ledgerEntryId, {
-              date: dateValue.toISOString(),
-              party: `${invoiceNo} - ${customerName}`,
-              station: city,
-              amount: subtotal,
-              discount: Number(discount) || 0,
-              taxOrPaid: effectiveTaxes + parsedTransport,
-              netAmount: grandTotal,
-              items: itemsDescription
-            })
-          }
-        }
-      } else {
-        let ledgerEntryId: string | undefined = undefined
-        if (targetAccountId && isLinked) {
-          ledgerEntryId = await addLedgerEntry(targetAccountId, {
-            date: dateValue.toISOString(),
-            party: `${invoiceNo} - ${customerName}`,
-            station: city,
-            amount: subtotal,
-            discount: Number(discount) || 0,
-            taxOrPaid: effectiveTaxes + parsedTransport,
-            netAmount: grandTotal,
-            items: itemsDescription,
-            payment: 0,
-            type: "bill"
-          })
-        }
-
-        const newInvId = await addInvoice({
-          ...invoiceData,
-          ledgerEntryId
-        })
-        
-        if (targetAccountId && ledgerEntryId) {
-          await updateLedgerEntry(targetAccountId, ledgerEntryId, { invoiceId: newInvId })
-        }
-      }
-      setIsDialogOpen(false)
     }
   }
 
@@ -326,17 +247,11 @@ export function InvoicesPage() {
   }
 
   const handleDeleteInvoice = async (invoice: Invoice) => {
-    if (invoice.items) {
-      for (const item of invoice.items) {
-        if ((item as any).finishedGoodId) {
-          const fg = finishedGoods.find(f => f.id === (item as any).finishedGoodId)
-          if (fg) {
-            await updateFinishedGood(fg.id, { qty: fg.qty + (item.qty || 0) })
-          }
-        }
-      }
+    try {
+      await deleteInvoice(invoice.id)
+    } catch (err: any) {
+      toast.error(err.message || "Deletion failed")
     }
-    await deleteInvoice(invoice.id)
   }
 
   const getPendingDaysColor = (dateString: string, status: Invoice["status"]) => {

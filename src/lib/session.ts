@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 const secretKey = process.env.SESSION_SECRET || "jeans-erp-super-secret-key-change-this-in-prod";
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
+  console.warn("WARNING: SESSION_SECRET is not set in production. Using default insecure key!");
+}
 const key = new TextEncoder().encode(secretKey);
 
 export async function encrypt(payload: any) {
@@ -25,7 +28,13 @@ export async function login(orgId: string) {
   const session = await encrypt({ orgId, expires });
 
   const cookieStore = await cookies();
-  cookieStore.set("jeans_session", session, { expires, httpOnly: true, secure: process.env.NODE_ENV === "production" });
+  cookieStore.set("jeans_session", session, { 
+    expires, 
+    httpOnly: true, 
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/"
+  });
 }
 
 export async function logout() {
@@ -42,6 +51,17 @@ export async function getSession() {
   } catch (e) {
     return null;
   }
+}
+
+export async function validateSession() {
+  const session = await getSession();
+  if (!session) return null;
+  
+  // Optional: check if org still exists
+  return {
+    isAuthenticated: true,
+    orgId: session.orgId
+  };
 }
 
 export async function verifySession(orgId?: string) {

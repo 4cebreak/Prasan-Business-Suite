@@ -275,7 +275,7 @@ export function AccountsPage() {
     toast.info("Changes discarded")
   }
 
-  const formatCurrency = (amount: number) => globalFormatCurrency(Math.abs(amount), activeOrg?.currency)
+  const formatCurrency = (amount: number) => globalFormatCurrency(Math.abs(amount))
 
   const totalReceivable = accounts.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0)
   const totalPayable = accounts.reduce((sum, a) => sum + (a.balance < 0 ? Math.abs(a.balance) : 0), 0)
@@ -405,7 +405,7 @@ export function AccountsPage() {
         ],
         [
           { content: 'NET BALANCE:', colSpan: 7, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 5 } },
-          { content: formatCurrency(finalNetBalance, { showSign: true }), colSpan: 3, styles: { halign: 'right', fontSize: 24, fontStyle: 'bold', cellPadding: 5 } }
+          { content: globalFormatCurrency(finalNetBalance, { showSign: true }), colSpan: 3, styles: { halign: 'right', fontSize: 24, fontStyle: 'bold', cellPadding: 5 } }
         ]
       ],
       footStyles: { 

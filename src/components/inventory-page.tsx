@@ -199,8 +199,8 @@ function RawMaterialsTab() {
       rm.qty.toString(),
       (rm.qtyUsed || 0).toString(),
       (rm.qty - (rm.qtyUsed || 0)).toString(),
-      formatPDFCurrency(rm.price, activeOrg?.currency),
-      formatPDFCurrency(rm.total, activeOrg?.currency)
+      formatPDFCurrency(rm.price),
+      formatPDFCurrency(rm.total)
     ])
 
     autoTable(doc, {
@@ -1105,7 +1105,7 @@ function FinishedGoodsTab() {
       fg.name,
       fg.location || "-",
       fg.qty.toString(),
-      formatPDFCurrency(fg.cost, activeOrg?.currency)
+      formatPDFCurrency(fg.cost)
     ])
 
     autoTable(doc, {

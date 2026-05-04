@@ -10,7 +10,8 @@ import {
   serverSetMasterPasswordHash, 
   serverListOrganizations, 
   serverLogin,
-  serverLogout
+  serverLogout,
+  validateSession
 } from "@/app/actions"
 import {
   Dialog,
@@ -427,15 +428,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     async function check() {
-      // Check session
-      const auth = sessionStorage.getItem("jeans_auth")
-      if (auth === "true") {
-        setIsAuthenticated(true)
-        setIsChecking(false)
-        return
+      // 1. Check server-side session first (RELIABLE)
+      try {
+        const session = await validateSession()
+        if (session?.isAuthenticated) {
+           setIsAuthenticated(true)
+           setIsChecking(false)
+           return
+        }
+      } catch (e) {
+        // Session invalid
       }
 
-      // Check setup state
+      // 2. Check setup state
       try {
         const fresh = await checkFreshInstall()
         if (fresh) {

@@ -104,7 +104,9 @@ model ItemRow {
   qty       Int      @default(0)
   rate      Float    @default(0)
   amount    Float    @default(0)
+  
   finishedGoodId String?
+  finishedGood   FinishedGood? @relation(fields: [finishedGoodId], references: [id], onDelete: SetNull)
   
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -185,4 +187,6 @@ model FinishedGood {
   
   orgId         String
   organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  itemRows      ItemRow[]
 }
