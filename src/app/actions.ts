@@ -61,8 +61,16 @@ export async function serverLogin(orgId: string, password?: string) {
   }
 
   await setSession(orgId)
+
+  // DATA MIGRATION: Update legacy "Direct Agent" to "Direct"
+  await prisma.account.updateMany({
+    where: { orgId, type: "Direct Agent" },
+    data: { type: "Direct" }
+  })
+
   return { success: true }
 }
+
 
 export async function serverLogout() {
   await clearSession()
@@ -112,8 +120,21 @@ export async function fetchStoreContext(orgId: string) {
     prisma.finishedGood.findMany({ where: { orgId: activeOrg.id }, orderBy: { date: 'desc' } })
   ])
 
+  // Double-check migration for existing sessions
+  const hasDirectAgent = accounts.some(a => a.type === "Direct Agent")
+  if (hasDirectAgent) {
+    await prisma.account.updateMany({
+      where: { orgId: activeOrg.id, type: "Direct Agent" },
+      data: { type: "Direct" }
+    })
+    // Re-fetch accounts after migration for accurate response
+    const updatedAccounts = await prisma.account.findMany({ where: { orgId: activeOrg.id }, include: { ledger: true } })
+    return { organizations, accounts: updatedAccounts, invoices, rawMaterials, wipGoods, finishedGoods }
+  }
+
   return { organizations, accounts, invoices, rawMaterials, wipGoods, finishedGoods }
 }
+
 
 
 export async function serverAddInvoice(orgId: string, invoicePayload: any) {
