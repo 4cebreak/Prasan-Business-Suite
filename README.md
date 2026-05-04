@@ -1,83 +1,81 @@
-# Prasan ERP
+# Prasan Manufacturing Business Suite
 
-A professional business suite for jeans manufacturing — accounting, invoicing, CRM, and ledger management.
+**Prasan Manufacturing Business Suite** is a production-grade ERP solution designed for modern manufacturing enterprises. It combines robust accounting, inventory synchronization, and label generation into a single, high-performance local application.
 
-## Features
+---
 
-- 🏢 **Multi-Company** — Manage unlimited business entities with isolated data
-- 📊 **Dashboard** — Real-time revenue, accounts, and invoice analytics
-- 🧾 **Invoicing** — Create, track, and export professional invoices
-- 📒 **Ledger Management** — Professional double-entry ledgers with Excel-style PDF export
-- 📑 **Advanced PDF Export** — Filter by date, transaction type, or manually select rows to export
-- 🔒 **Password Protected** — SHA-256 hashed master password
-- 🗄️ **SQLite Database** — Permanent local storage via Prisma ORM
+## 🌟 Key Features
 
-## Quick Start
+### 🏢 Core Management
+*   **Multi-Organization Support**: Manage multiple business entities with complete data isolation.
+*   **Dynamic Dashboard**: Real-time analytics for revenue, pending payments, and stock levels.
+*   **Settings Engine**: Toggle global behaviors like "Strict Inventory Invoicing" or "Auto-Linked Ledgers."
+
+### 🧾 Financials & Invoicing
+*   **Professional Invoicing**: Generate sleek, branded invoices with auto-calculated taxes and discounts.
+*   **PDF Export**: High-quality PDF generation for invoices and account statements.
+*   **Smart Ledgers**: O(1) incremental balance tracking for high scalability. Manage Direct and Agency customers with ease.
+*   **Automatic Reconciliation**: Invoices can be auto-linked to ledgers, ensuring your books are always in sync.
+
+### 📦 Inventory & Manufacturing
+*   **Lifecycle Tracking**: Manage Raw Materials, Work-in-Progress (WIP), and Finished Goods.
+*   **Strict Synchronization**: Optional inventory-invoice link that automatically deducts stock upon sale and returns it upon deletion/return.
+*   **Manufacturing Costs**: Track raw material usage and job-work costs for accurate product pricing.
+
+### 🏷️ Barcode & Labeling
+*   **Label Generator**: Create professional thermal labels with Style, Size, and Rate information.
+*   **Batch Printing**: Generate labels in bulk for thermal printers (Zebra, TSC, etc.) with a single click.
+*   **Invoice Integration**: Print barcodes directly from your invoice line items.
+
+---
+
+## 🔒 Enterprise Security
+
+This suite is built with a "Security-First" architecture:
+*   **Bcrypt Hashing**: Industry-standard password encryption with automatic legacy migration.
+*   **Environment Secrets**: Cryptographically secure session management using `SESSION_SECRET`.
+*   **Transactional Integrity**: All financial and inventory mutations use ACID-compliant database transactions to prevent data corruption.
+*   **XSS Protection**: Sanitized label generation engine to prevent script injection.
+*   **Input Validation**: Strict server-side validation to prevent negative quantities or rates.
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
+*   [Node.js](https://nodejs.org) v18 or later
 
-- [Node.js](https://nodejs.org) v18 or later
+### The "One-Click" Launch
+The suite includes self-healing startup scripts that automatically handle dependency installation and database migrations:
+*   **macOS**: Double-click `start-mac.command`
+*   **Windows**: Double-click `start-windows.bat`
 
-### Option A: Double-Click Launch
+*Note: These scripts automatically generate a unique security secret for your installation.*
 
-- **macOS**: Double-click `start-mac.command`
-- **Windows**: Double-click `start-windows.bat`
+---
 
-### Option B: Manual
+## 🛠️ Tech Stack
+*   **Framework**: Next.js 16 (App Router + Server Actions)
+*   **ORM**: Prisma with SQLite
+*   **Security**: Bcrypt.js + Jose (JWT)
+*   **UI**: Shadcn/UI + Tailwind CSS + Framer Motion
+*   **Utilities**: bwip-js (Barcodes), jsPDF (Documents)
 
-```bash
-npm install
-npx prisma generate
-npx prisma db push
-npm run dev
+---
+
+## 📁 Project Structure
+```text
+├── prisma/schema.prisma    # Data models & relations
+├── src/app/actions.ts      # Hardened Server Actions (Business Logic)
+├── src/proxy.ts            # Global network boundary & session verification
+├── src/lib/                # Core utilities (Auth, Sessions, Barcodes)
+├── src/components/         # Modular UI Page components
+├── docs/                   # SaaS & Mobile expansion plans
+├── start-mac.command       # Auto-healing macOS launcher
+└── start-windows.bat       # Auto-healing Windows launcher
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+---
 
-## Troubleshooting
-
-### Windows Users (Folder copied from Mac)
-
-If you received this project folder from a Mac user, the app will handle everything automatically!
-
-**Just run `start-windows.bat`**.
-The script will now detect if the folders are from a Mac, delete the incorrect ones, and download the correct Windows version for you automatically.
-
-**Requirements:**
-
-1. Make sure [Node.js](https://nodejs.org) is installed.
-2. If the terminal closes instantly, please restart your laptop and try once more.
-
-## First Launch
-
-On first launch, a **Setup Wizard** will guide you through:
-
-1. Setting your **Company Name**
-2. Creating a **Master Password**
-
-After setup, use the password to log in on subsequent visits.
-
-## Tech Stack
-
-- **Framework**: Next.js 16 (Turbopack)
-- **Database**: SQLite via Prisma ORM
-- **Auth**: Client-side SHA-256 password hashing
-- **UI**: shadcn/ui + Tailwind CSS
-
-## Project Structure
-
-```
-├── prisma/schema.prisma    # Database schema
-├── src/app/actions.ts      # Server Actions (CRUD)
-├── src/lib/auth.tsx        # Auth + Setup Wizard
-├── src/lib/store.tsx       # Global state (SQLite-backed)
-├── src/lib/prisma.ts       # Database connection singleton
-├── src/components/         # UI components
-├── start-mac.command       # macOS launcher
-├── start-windows.bat       # Windows launcher
-└── dev.db                  # SQLite database (auto-created)
-```
-
-## License
-
-Private — All rights reserved.
+## 📄 License
+Private — All rights reserved. Built for Prasan Business Suite.
