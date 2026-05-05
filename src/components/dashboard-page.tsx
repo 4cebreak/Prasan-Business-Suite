@@ -135,8 +135,14 @@ export function DashboardPage() {
     else if (days >= 30) { pending30++; amt30 += i.grandTotal }
   })
 
-  const totalReceivables = accounts.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0)
-  const totalPayables = accounts.reduce((sum, a) => sum + (a.balance < 0 ? Math.abs(a.balance) : 0), 0)
+  const totalReceivables = accounts.reduce((sum, a) => {
+    if (a.category === "Customer") return sum + (a.balance > 0 ? a.balance : 0)
+    return sum + (a.balance < 0 ? Math.abs(a.balance) : 0)
+  }, 0)
+  const totalPayables = accounts.reduce((sum, a) => {
+    if (a.category === "Customer") return sum + (a.balance < 0 ? Math.abs(a.balance) : 0)
+    return sum + (a.balance > 0 ? a.balance : 0)
+  }, 0)
   const netLedgerBalance = totalReceivables - totalPayables
 
   return (

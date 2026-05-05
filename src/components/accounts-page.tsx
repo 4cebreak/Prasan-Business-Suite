@@ -28,7 +28,7 @@ import { useStore, Account, LedgerEntry } from "@/lib/store"
 const PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "Google Pay", "NEFT/RTGS"]
 
 export function AccountsPage() {
-  const { accounts, addAccount, updateAccount, deleteAccount, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, organization, setTriggerEditInvoiceId, activeOrg } = useStore()
+  const { accounts, addAccount, updateAccount, deleteAccount, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, setTriggerEditInvoiceId, activeOrg } = useStore()
   const [searchQuery, setSearchQuery] = useState("")
 
   // Account form state
@@ -105,8 +105,8 @@ export function AccountsPage() {
       const q = searchQuery.toLowerCase()
       return (
         account.name.toLowerCase().includes(q) ||
-        account.station.toLowerCase().includes(q) ||
-        account.ledger.some(entry => entry.party?.toLowerCase().includes(q))
+        (account.station || "").toLowerCase().includes(q) ||
+        account.ledger.some(entry => (entry.party || "").toLowerCase().includes(q))
       )
     }
   )
@@ -125,7 +125,7 @@ export function AccountsPage() {
     setNewAccountName(account.name)
     setNewAccountCategory(account.category)
     setNewAccountType(account.type)
-    setNewAccountStation(account.station)
+    setNewAccountStation(account.station || "")
     setIsAccountDialogOpen(true)
   }
 
@@ -180,11 +180,11 @@ export function AccountsPage() {
       setEntryParty(entry.party || "")
     }
 
-    setEntryStation(entry.station)
+    setEntryStation(entry.station || "")
     setEntryAmount(entry.amount ?? "")
     setEntryDiscount(entry.discount ?? "")
     setEntryTaxOrPaid(entry.taxOrPaid ?? "")
-    setEntryItems(entry.items)
+    setEntryItems(entry.items || "")
     setEntryPayment(entry.payment ?? "")
     setEntryType(entry.type || "bill")
     setEntryPaymentMode(entry.paymentMode || "Cash")
@@ -224,7 +224,8 @@ export function AccountsPage() {
         items: entryItems,
         payment: newPayment,
         type: entryType,
-        paymentMode: entryType === "payment" ? entryPaymentMode : undefined
+        paymentMode: entryType === "payment" ? entryPaymentMode : undefined,
+        accountId: selectedAccountId
       }
 
       if (editingEntryId) {
@@ -277,8 +278,16 @@ export function AccountsPage() {
 
   const formatCurrency = (amount: number) => globalFormatCurrency(Math.abs(amount))
 
-  const totalReceivable = accounts.reduce((sum, a) => sum + (a.balance > 0 ? a.balance : 0), 0)
-  const totalPayable = accounts.reduce((sum, a) => sum + (a.balance < 0 ? Math.abs(a.balance) : 0), 0)
+  const totalReceivable = accounts.reduce((sum, a) => {
+    if (a.category === "Customer") return sum + (a.balance > 0 ? a.balance : 0)
+    // For Suppliers, a negative balance means we paid extra (receivable)
+    return sum + (a.balance < 0 ? Math.abs(a.balance) : 0)
+  }, 0)
+  const totalPayable = accounts.reduce((sum, a) => {
+    if (a.category === "Customer") return sum + (a.balance < 0 ? Math.abs(a.balance) : 0)
+    // For Suppliers, a positive balance means we owe them (payable)
+    return sum + (a.balance > 0 ? a.balance : 0)
+  }, 0)
 
   // Sort and filter staged ledger
   const sortedLedger = stagedLedger
@@ -306,28 +315,32 @@ export function AccountsPage() {
     const { jsPDF } = await import("jspdf")
     const autoTable = (await import("jspdf-autotable")).default
     
-    const doc = new jsPDF()
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    })
     const primaryColor = [16, 133, 252] as [number, number, number]
     
     // Header
-    doc.setFontSize(28)
+    doc.setFontSize(24)
     doc.setTextColor(...primaryColor)
-    doc.text(organization || "ABC Company", 14, 22)
+    doc.text(activeOrg.name || "ABC Company", 14, 20)
     
-    doc.setFontSize(10)
+    doc.setFontSize(9)
     doc.setTextColor(100)
-    doc.text(`Ledger Statement: ${selectedAccount.name}`, 14, 30)
+    doc.text(`Ledger Statement: ${selectedAccount.name}`, 14, 28)
     if (selectedAccount.station) {
-      doc.text(`Station: ${selectedAccount.station}`, 14, 36)
+      doc.text(`Station: ${selectedAccount.station}`, 14, 34)
     }
 
-    doc.setFontSize(20)
+    doc.setFontSize(18)
     doc.setTextColor(0, 0, 0)
-    doc.text("LEDGER", 140, 22)
+    doc.text("LEDGER", 230, 20)
 
-    doc.setFontSize(10)
+    doc.setFontSize(9)
     const today = new Date().toLocaleDateString("en-IN")
-    doc.text(`Generated: ${today}`, 140, 30)
+    doc.text(`Generated: ${today}`, 230, 28)
 
     const exportLedgerAmount = entriesToExport.reduce((sum, e) => sum + (e.amount || 0), 0)
     const exportLedgerDiscount = entriesToExport.reduce((sum, e) => sum + (e.discount || 0), 0)
@@ -336,6 +349,9 @@ export function AccountsPage() {
     const exportLedgerPayment = entriesToExport.reduce((sum, e) => sum + (e.payment || 0), 0)
     const finalNetBalance = exportLedgerNet - exportLedgerPayment
 
+    const formatPdfCurrency = (amt: number) => globalFormatCurrency(amt, { showSymbol: false })
+    const formatPdfSignedCurrency = (amt: number) => globalFormatCurrency(amt, { showSign: true, showSymbol: false })
+
     const tableData = entriesToExport.map(entry => {
       const sp = splitParty(entry.party || "");
       return [
@@ -343,44 +359,46 @@ export function AccountsPage() {
         sp.invNo,
         sp.party + (entry.type === 'payment' && entry.paymentMode ? `\n(${entry.paymentMode})` : ""),
         entry.station || "",
-        entry.amount ? formatCurrency(entry.amount) : "",
-        entry.discount ? `-${formatCurrency(entry.discount)}` : "",
-        entry.taxOrPaid ? formatCurrency(entry.taxOrPaid) : "",
-        entry.netAmount ? formatCurrency(entry.netAmount) : "",
+        entry.amount ? formatPdfCurrency(entry.amount) : "",
+        entry.discount ? `-${formatPdfCurrency(entry.discount)}` : "",
+        entry.taxOrPaid ? formatPdfCurrency(entry.taxOrPaid) : "",
+        entry.netAmount ? formatPdfCurrency(entry.netAmount) : "",
         entry.items || "",
-        entry.payment ? formatCurrency(entry.payment) : ""
+        entry.payment ? formatPdfCurrency(entry.payment) : ""
       ]
     })
 
     autoTable(doc, {
-      startY: 45,
-      head: [['Date', 'Inv No', 'Party', 'Station', 'Amount', 'Discount', 'Taxes+Expense', 'Net Amount', 'ITEMS', 'Payment']],
+      startY: 40,
+      head: [['Date', 'Inv No', 'Party', 'Station', 'Amount (Rs)', 'Discount', 'Taxes+Expense', 'Net Amount (Rs)', 'ITEMS', 'Payment (Rs)']],
       body: tableData,
       theme: 'grid',
       headStyles: { 
-        fillColor: [255, 255, 255], 
+        fillColor: [240, 240, 240], 
         textColor: [0, 0, 0], 
         fontStyle: 'bold', 
         halign: 'center', 
-        lineWidth: 0.5, 
-        lineColor: [0, 0, 0] 
+        lineWidth: 0.2, 
+        lineColor: [0, 0, 0],
+        fontSize: 8
       },
       bodyStyles: { 
         textColor: [0, 0, 0], 
         lineColor: [0, 0, 0],
-        fontSize: 9
+        fontSize: 8,
+        cellPadding: 2
       },
       columnStyles: {
         0: { halign: 'center', cellWidth: 20 }, // Date
-        1: { halign: 'center', cellWidth: 20 }, // Inv No
-        2: { halign: 'left' },                  // Party
-        3: { halign: 'center' },                // Station
-        4: { halign: 'right' },                 // Amount
-        5: { halign: 'right' },                 // Discount
-        6: { halign: 'right' },                 // Taxes+Expense
-        7: { halign: 'right', fontStyle: 'bold' }, // Net Amount
-        8: { halign: 'center' },                // Items
-        9: { halign: 'right', fontStyle: 'bold' }  // Payment
+        1: { halign: 'center', cellWidth: 15 }, // Inv No
+        2: { halign: 'left', cellWidth: 'auto' }, // Party
+        3: { halign: 'center', cellWidth: 20 }, // Station
+        4: { halign: 'right', cellWidth: 26 },  // Amount
+        5: { halign: 'right', cellWidth: 22 },  // Discount
+        6: { halign: 'right', cellWidth: 26 },  // Taxes+Expense
+        7: { halign: 'right', fontStyle: 'bold', cellWidth: 28 }, // Net Amount
+        8: { halign: 'center', cellWidth: 30 }, // Items
+        9: { halign: 'right', fontStyle: 'bold', cellWidth: 28 }  // Payment
       },
       didParseCell: (data) => {
         // Style 'OLD BALANCE' rows with yellow highlight
@@ -396,23 +414,23 @@ export function AccountsPage() {
           '', 
           '', 
           'TOTAL',
-          exportLedgerAmount ? formatCurrency(exportLedgerAmount) : "", 
-          exportLedgerDiscount ? `-${formatCurrency(exportLedgerDiscount)}` : "", 
-          exportLedgerTax ? formatCurrency(exportLedgerTax) : "", 
-          exportLedgerNet ? formatCurrency(exportLedgerNet) : "", 
+          exportLedgerAmount ? formatPdfCurrency(exportLedgerAmount) : "", 
+          exportLedgerDiscount ? `-${formatPdfCurrency(exportLedgerDiscount)}` : "", 
+          exportLedgerTax ? formatPdfCurrency(exportLedgerTax) : "", 
+          exportLedgerNet ? formatPdfCurrency(exportLedgerNet) : "", 
           '', 
-          exportLedgerPayment ? formatCurrency(exportLedgerPayment) : ""
+          exportLedgerPayment ? formatPdfCurrency(exportLedgerPayment) : ""
         ],
         [
-          { content: 'NET BALANCE:', colSpan: 7, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 5 } },
-          { content: globalFormatCurrency(finalNetBalance, { showSign: true }), colSpan: 3, styles: { halign: 'right', fontSize: 24, fontStyle: 'bold', cellPadding: 5 } }
+          { content: 'NET BALANCE (Rs.):', colSpan: 7, styles: { halign: 'right', fontSize: 14, fontStyle: 'bold', cellPadding: 3 } },
+          { content: formatPdfSignedCurrency(finalNetBalance), colSpan: 3, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 3 } }
         ]
       ],
       footStyles: { 
         fillColor: [255, 255, 255], 
         textColor: [0, 0, 0], 
         fontStyle: 'bold', 
-        lineWidth: 0.5, 
+        lineWidth: 0.2, 
         lineColor: [0, 0, 0] 
       }
     })
@@ -616,12 +634,25 @@ export function AccountsPage() {
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex flex-col items-end">
-                      <span className={cn("font-bold text-lg font-mono", account.balance > 0 ? "text-accent" : account.balance < 0 ? "text-destructive" : "text-muted-foreground")}>
-                        {formatCurrency(account.balance)}
-                      </span>
-                      <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                        {account.balance > 0 ? "Receivable" : account.balance < 0 ? "Payable" : "Settled"}
-                      </span>
+                      {account.category === "Customer" ? (
+                        <>
+                          <span className={cn("font-bold text-lg font-mono", account.balance > 0 ? "text-accent" : account.balance < 0 ? "text-destructive" : "text-muted-foreground")}>
+                            {formatCurrency(account.balance)}
+                          </span>
+                          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                            {account.balance > 0 ? "Receivable" : account.balance < 0 ? "Payable" : "Settled"}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className={cn("font-bold text-lg font-mono", account.balance > 0 ? "text-destructive" : account.balance < 0 ? "text-accent" : "text-muted-foreground")}>
+                            {formatCurrency(account.balance)}
+                          </span>
+                          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                            {account.balance > 0 ? "Payable" : account.balance < 0 ? "Advance" : "Settled"}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="p-4 text-center">
@@ -738,12 +769,12 @@ export function AccountsPage() {
                                         {new Date(entry.date).toLocaleDateString('en-GB')}
                                       </td>
                                       <td className="p-3">
-                                        {splitParty(entry.party).invNo !== "-" && (
-                                          <span className="font-semibold text-xs bg-muted px-2 py-1 rounded">{splitParty(entry.party).invNo}</span>
+                                        {splitParty(entry.party || "").invNo !== "-" && (
+                                          <span className="font-semibold text-xs bg-muted px-2 py-1 rounded">{splitParty(entry.party || "").invNo}</span>
                                         )}
                                       </td>
                                       <td className="p-3 flex flex-col">
-                                        <span>{splitParty(entry.party).party}</span>
+                                        <span>{splitParty(entry.party || "").party}</span>
                                         {entry.type === "payment" && entry.paymentMode && (
                                           <span className="text-[10px] uppercase text-accent font-semibold">{entry.paymentMode}</span>
                                         )}

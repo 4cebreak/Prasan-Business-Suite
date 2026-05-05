@@ -33,6 +33,14 @@ model Organization {
   rawMaterials  RawMaterial[]
   wipGoods      WIPGood[]
   finishedGoods FinishedGood[]
+
+  @@index([name])
+}
+
+model SystemConfig {
+  id                String @id @default("global")
+  adminPasswordHash String
+  dbVersion         Int    @default(1) // 1 = Floats, 2 = Cents
 }
 
 model Account {
@@ -41,12 +49,14 @@ model Account {
   category  String         @default("Customer") // "Customer" | "Supplier"
   type      String         // "Direct" | "Agency"
   station   String?
-  balance   Float          @default(0)
+  balance   Int            @default(0) // Stored in cents
   
   orgId     String
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   
   ledger    LedgerEntry[]
+
+  @@index([orgId])
 }
 
 model LedgerEntry {
@@ -54,12 +64,12 @@ model LedgerEntry {
   date        DateTime @default(now())
   party       String?
   station     String?
-  amount      Float    @default(0)
-  discount    Float    @default(0)
-  taxOrPaid   Float    @default(0)
-  netAmount   Float    @default(0)
+  amount      Int      @default(0) // Stored in cents
+  discount    Int      @default(0) // Stored in cents
+  taxOrPaid   Int      @default(0) // Stored in cents
+  netAmount   Int      @default(0) // Stored in cents
   items       String?
-  payment     Float    @default(0)
+  payment     Int      @default(0) // Stored in cents
   type        String   // "bill" | "payment"
   paymentMode String?
   
@@ -67,6 +77,9 @@ model LedgerEntry {
   
   accountId   String
   account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([date])
 }
 
 model Invoice {
@@ -77,14 +90,14 @@ model Invoice {
   agencyName       String?
   city             String?
   transport        String?
-  transportCharges Float     @default(0)
+  transportCharges Int       @default(0) // Stored in cents
   remarks          String?
   marka            String?
   itemsDescription String?
-  subtotal         Float     @default(0)
-  discount         Float     @default(0)
-  taxes            Float     @default(0)
-  grandTotal       Float     @default(0)
+  subtotal         Int       @default(0) // Stored in cents
+  discount         Int       @default(0) // Stored in cents
+  taxes            Int       @default(0) // Stored in cents
+  grandTotal       Int       @default(0) // Stored in cents
   status           String    @default("pending") // "paid" | "pending" | "overdue"
   
   ledgerEntryId    String?   @unique
@@ -93,6 +106,10 @@ model Invoice {
   organization     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   
   items            ItemRow[]
+
+  @@index([orgId])
+  @@index([date])
+  @@index([invoiceNo])
 }
 
 model ItemRow {
@@ -102,14 +119,17 @@ model ItemRow {
   brandName String?
   size      String?
   qty       Int      @default(0)
-  rate      Float    @default(0)
-  amount    Float    @default(0)
+  rate      Int      @default(0) // Stored in cents
+  amount    Int      @default(0) // Stored in cents
   
   finishedGoodId String?
   finishedGood   FinishedGood? @relation(fields: [finishedGoodId], references: [id], onDelete: SetNull)
   
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([finishedGoodId])
 }
 
 model RawMaterial {
@@ -120,8 +140,8 @@ model RawMaterial {
   qty           Int      @default(0)
   qtyUsed       Int      @default(0)
   remarks       String?
-  price         Float    @default(0)
-  total         Float    @default(0)
+  price         Int      @default(0) // Stored in cents
+  total         Int      @default(0) // Stored in cents
   location      String?
   invNo         String?
   billerName    String?
@@ -131,6 +151,8 @@ model RawMaterial {
   organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   
   ledgerEntryId String? @unique
+
+  @@index([orgId])
 }
 
 model WIPGood {
@@ -138,13 +160,15 @@ model WIPGood {
   date          DateTime @default(now())
   name          String
   status        String   @default("Started")
-  totalCost     Float    @default(0)
+  totalCost     Int      @default(0) // Stored in cents
   
   orgId         String
   organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   
   rawMaterials  RawMaterialUsage[]
   jobWorks      ManufacturingProcess[]
+
+  @@index([orgId])
 }
 
 model RawMaterialUsage {
@@ -154,7 +178,9 @@ model RawMaterialUsage {
   
   name          String
   qty           Int
-  cost          Float    @default(0)
+  cost          Int      @default(0) // Stored in cents
+
+  @@index([wipId])
 }
 
 model ManufacturingProcess {
@@ -165,10 +191,12 @@ model ManufacturingProcess {
   name          String
   supplierName  String?
   qty           Int      @default(0)
-  price         Float    @default(0)
-  total         Float    @default(0)
+  price         Int      @default(0) // Stored in cents
+  total         Int      @default(0) // Stored in cents
   
   ledgerEntryId String?  @unique
+
+  @@index([wipId])
 }
 
 model FinishedGood {
@@ -177,7 +205,7 @@ model FinishedGood {
   name          String
   qty           Int      @default(0)
   size          String?
-  cost          Float    @default(0)
+  cost          Int      @default(0) // Stored in cents
   remarks       String?
   location      String?
   wipBreakdown  String?
@@ -189,4 +217,6 @@ model FinishedGood {
   organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   itemRows      ItemRow[]
+
+  @@index([orgId])
 }

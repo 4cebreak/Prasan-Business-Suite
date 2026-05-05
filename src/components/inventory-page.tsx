@@ -698,13 +698,18 @@ function WIPRow({ wip }: { wip: WIPGood }) {
     }
 
     // Ledger Integration for Supplier
-    let targetAccountId = undefined
+    let targetAccountId: string | undefined = undefined
     if (isNewJwSupplier) {
       targetAccountId = await addAccount({ name: jwSupplier, category: "Supplier", type: "Direct", station: "" })
     } else {
       const existing = suppliers.find(s => s.name === jwSupplier)
       if (existing) targetAccountId = existing.id
       else targetAccountId = await addAccount({ name: jwSupplier, category: "Supplier", type: "Direct", station: "" })
+    }
+
+    if (!targetAccountId) {
+      toast.error("Could not determine supplier account")
+      return
     }
     
     await addLedgerEntry(targetAccountId, {

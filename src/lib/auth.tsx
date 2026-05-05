@@ -214,6 +214,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   const [newName, setNewName] = useState("")
   const [newPass, setNewPass] = useState("")
   const [newConfirm, setNewConfirm] = useState("")
+  const [adminPass, setAdminPass] = useState("")
   const [newLinkInvoices, setNewLinkInvoices] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
 
@@ -259,7 +260,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     try {
       const newId = newName.toLowerCase().replace(/[^a-z0-9]/g, '-')
       // Passwords are hashed on the server
-      await serverAddOrganization(newName.trim(), newId, newPass, newLinkInvoices)
+      await serverAddOrganization(newName.trim(), newId, newPass, newLinkInvoices, adminPass)
       await serverLogin(newId, newPass)
       
       localStorage.setItem("jeans_active_org", newId)
@@ -351,6 +352,19 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
                       className="rounded-xl bg-muted border-0 h-11"
                     />
                   </div>
+                  {organizations.length > 0 && (
+                    <div className="space-y-1.5 pt-2 border-t border-border/50">
+                      <label className="text-sm font-medium text-primary">Admin Authorization</label>
+                      <Input 
+                        type="password"
+                        placeholder="Master password of any existing org" 
+                        value={adminPass}
+                        onChange={(e) => setAdminPass(e.target.value)}
+                        className="rounded-xl bg-muted border-2 border-primary/20 h-11 focus:border-primary"
+                      />
+                      <p className="text-[10px] text-muted-foreground">Required to authorize new business creation.</p>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3 bg-primary/5 p-3 rounded-xl border border-primary/20 mt-2">
                     <input 
                       type="checkbox" 

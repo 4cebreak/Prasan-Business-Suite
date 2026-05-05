@@ -23,12 +23,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { useStore, Invoice } from "@/lib/store"
+import { useStore } from "@/lib/store"
+import { Invoice, ItemRow } from "@/types"
 import { useEffect } from "react"
 import { toast } from "sonner"
 
 export function InvoicesPage() {
-  const { invoices, addInvoice, updateInvoice, deleteInvoice, accounts, activeOrg, addAccount, addLedgerEntry, updateLedgerEntry, organization, triggerEditInvoiceId, setTriggerEditInvoiceId, finishedGoods, updateFinishedGood } = useStore()
+  const { invoices, addInvoice, updateInvoice, deleteInvoice, accounts, activeOrg, addAccount, addLedgerEntry, triggerEditInvoiceId, setTriggerEditInvoiceId, finishedGoods, updateFinishedGood, invoicePagination, loadInvoices } = useStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)
@@ -50,7 +51,7 @@ export function InvoicesPage() {
   const [isNewCustomer, setIsNewCustomer] = useState(false)
   const [newCustomerType, setNewCustomerType] = useState<"Direct" | "Agency">("Direct")
   
-  const [items, setItems] = useState<any[]>([{
+  const [items, setItems] = useState<Partial<ItemRow>[]>([{
     sno: 1, style: "", brandName: "", size: "", qty: 1, rate: 0, amount: 0, finishedGoodId: ""
   }])
 
@@ -63,9 +64,7 @@ export function InvoicesPage() {
         invoice.customerName?.toLowerCase().includes(q) ||
         invoice.agencyName?.toLowerCase().includes(q) ||
         invoice.city?.toLowerCase().includes(q) ||
-        invoice.itemsDescription?.toLowerCase().includes(q) ||
-        new Date(invoice.date).toLocaleDateString().includes(q) ||
-        invoice.items?.some(item => item.style?.toLowerCase().includes(q) || item.brandName?.toLowerCase().includes(q))
+        invoice.itemsDescription?.toLowerCase().includes(q)
       )
     }
   )
@@ -276,7 +275,7 @@ export function InvoicesPage() {
     // Header
     doc.setFontSize(28)
     doc.setTextColor(...primaryColor)
-    doc.text(organization, 14, 22)
+    doc.text(activeOrg.name || "Parasnath Jeans", 14, 22)
     
     doc.setFontSize(10)
     doc.setTextColor(80)
@@ -325,18 +324,22 @@ export function InvoicesPage() {
       ...(showBrand ? [activeOrg?.invoiceBrandNameLabel || 'Brand Name'] : []),
       ...(showSize ? [activeOrg?.invoiceSizeLabel || 'Size'] : []),
       'Qty', 
-      'Price', 
-      'Amount'
+      'Price (Rs)', 
+      'Amount (Rs)'
     ]
+
+    const formatPdfCurrency = (amount: number) => {
+      return Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
 
     const tableData = invoice.items.map(item => [
       item.sno, 
-      item.style, 
-      ...(showBrand ? [item.brandName] : []),
-      ...(showSize ? [item.size] : []),
+      item.style || "", 
+      ...(showBrand ? [item.brandName || ""] : []),
+      ...(showSize ? [item.size || ""] : []),
       item.qty, 
-      item.rate, 
-      item.amount
+      formatPdfCurrency(item.rate), 
+      formatPdfCurrency(item.amount)
     ])
 
     const footColSpan = 2 + (showBrand ? 1 : 0) + (showSize ? 1 : 0)
@@ -349,12 +352,21 @@ export function InvoicesPage() {
       theme: 'grid',
       headStyles: { fillColor: primaryColor },
       foot: [
-        [...footEmptyCols, 'Subtotal', '', `${invoice.subtotal}`],
-        [...footEmptyCols, 'Discount', '', `-${invoice.discount}`],
-        [...footEmptyCols, 'Taxes+Expense', '', `+${(invoice.taxes || 0) + (invoice.transportCharges || 0)}`],
-        [...footEmptyCols, 'Grand Total', '', `${invoice.grandTotal}`],
+        [...footEmptyCols, 'Subtotal', '', formatPdfCurrency(invoice.subtotal)],
+        [...footEmptyCols, 'Discount', '', `-${formatPdfCurrency(invoice.discount)}`],
+        [...footEmptyCols, 'Taxes+Expense', '', `+${formatPdfCurrency((invoice.taxes || 0) + (invoice.transportCharges || 0))}`],
+        [...footEmptyCols, 'Grand Total (Rs)', '', formatPdfCurrency(invoice.grandTotal)],
       ],
-      footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' }
+      footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 15 }, // S.No
+        1: { halign: 'left', cellWidth: 'auto' }, // Product
+        ...(showBrand ? { 2: { halign: 'left', cellWidth: 'auto' } } : {}), // Brand
+        ...(showSize ? { [showBrand ? 3 : 2]: { halign: 'center', cellWidth: 20 } } : {}), // Size
+        [footColSpan - 2]: { halign: 'center', cellWidth: 20 }, // Qty
+        [footColSpan - 1]: { halign: 'right', cellWidth: 35 }, // Price
+        [footColSpan]: { halign: 'right', cellWidth: 35 } // Amount
+      }
     })
 
     const safeFilename = (invoice.invoiceNo || 'invoice').replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -476,12 +488,12 @@ export function InvoicesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
                   <div className="col-span-1 md:col-span-1 lg:col-span-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">Agency Name</label>
-                    {isNewCustomer ? (
+                    {isNewCustomer || !activeOrg?.linkInvoicesLedgers ? (
                       <Input 
-                        placeholder={newCustomerType === "Agency" ? "e.g. XYZ AGENCIES" : "N/A (Direct)"} 
-                        value={newCustomerType === "Agency" ? agencyName : ""} 
+                        placeholder={newCustomerType === "Agency" || !activeOrg?.linkInvoicesLedgers ? "e.g. XYZ AGENCIES" : "N/A (Direct)"} 
+                        value={agencyName} 
                         onChange={(e) => setAgencyName(e.target.value)} 
-                        disabled={!!editingInvoiceId || newCustomerType === "Direct"}
+                        disabled={!!editingInvoiceId && activeOrg?.linkInvoicesLedgers}
                         className="rounded-lg h-10 bg-background border-border/50 focus-visible:ring-primary disabled:opacity-50 font-medium" 
                       />
                     ) : (
@@ -499,12 +511,12 @@ export function InvoicesPage() {
 
                   <div className="col-span-1 md:col-span-1 lg:col-span-2">
                     <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">Customer Name</label>
-                    {isNewCustomer || agencyName ? (
+                    {isNewCustomer || !activeOrg?.linkInvoicesLedgers || agencyName ? (
                       <Input 
                         placeholder="e.g. ABC RETAIL PVT LTD" 
                         value={customerName} 
                         onChange={(e) => setCustomerName(e.target.value)} 
-                        disabled={!!editingInvoiceId} 
+                        disabled={!!editingInvoiceId && activeOrg?.linkInvoicesLedgers} 
                         className="rounded-lg h-10 bg-background border-border/50 focus-visible:ring-primary disabled:opacity-50 font-medium" 
                       />
                     ) : (
@@ -617,7 +629,7 @@ export function InvoicesPage() {
                         {activeOrg?.invoiceShowSize !== false && <td className="p-2"><Input className="h-9 border-0 bg-muted/50 rounded-lg text-sm min-w-20" value={item.size ?? ''} onChange={e => handleItemChange(idx, 'size', e.target.value)} /></td>}
                         <td className="p-2"><Input type="number" className="h-9 border-0 bg-muted/50 rounded-lg text-sm min-w-16" value={item.qty ?? ''} onChange={e => handleItemChange(idx, 'qty', e.target.value === '' ? '' : Number(e.target.value))} /></td>
                         <td className="p-2"><Input type="number" className="h-9 border-0 bg-muted/50 rounded-lg text-sm min-w-20" value={item.rate ?? ''} onChange={e => handleItemChange(idx, 'rate', e.target.value === '' ? '' : Number(e.target.value))} /></td>
-                        <td className="p-2 text-right font-medium min-w-24">{formatCurrency(item.amount)}</td>
+                        <td className="p-2 text-right font-medium min-w-24">{formatCurrency(item.amount || 0)}</td>
                         <td className="p-2 text-center">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg" onClick={() => handleRemoveItem(idx)}>
                             <Trash2 className="w-4 h-4" />
@@ -770,7 +782,7 @@ export function InvoicesPage() {
                           <DropdownMenuItem className="rounded-lg gap-2" onClick={() => generatePDF(invoice)}>
                             <Download className="w-4 h-4" /> Download PDF
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="rounded-lg gap-2 font-medium text-primary bg-primary/5" onClick={() => printBarcodes(invoice.items)}>
+                          <DropdownMenuItem className="rounded-lg gap-2" onClick={() => printBarcodes(invoice.items.map(it => ({ ...it, style: it.style || "", brand: it.brandName })))}>
                             <Barcode className="w-4 h-4" /> Print Barcodes
                           </DropdownMenuItem>
                           <DropdownMenuItem className="rounded-lg gap-2 text-destructive" onClick={() => handleDeleteInvoice(invoice)}>
@@ -786,15 +798,30 @@ export function InvoicesPage() {
           </table>
         </div>
 
-        {filteredInvoices.length === 0 && (
-          <div className="p-12 text-center">
-            <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No invoices found</p>
+        <div className="border-t border-border bg-muted/30 p-4 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            Showing {invoices.length} of {invoicePagination.total} invoices (Page {invoicePagination.page})
+          </span>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="rounded-lg h-9" 
+              disabled={invoicePagination.page <= 1}
+              onClick={() => loadInvoices(invoicePagination.page - 1)}
+            >
+              Previous
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="rounded-lg h-9" 
+              disabled={invoicePagination.page * invoicePagination.pageSize >= invoicePagination.total}
+              onClick={() => loadInvoices(invoicePagination.page + 1)}
+            >
+              Next
+            </Button>
           </div>
-        )}
-
-        <div className="border-t border-border bg-muted/30 p-4">
-          <span className="text-sm text-muted-foreground">Showing {filteredInvoices.length} of {invoices.length} invoices</span>
         </div>
       </div>
     </div>

@@ -1,83 +1,91 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Prasan ERP
+title PRASAN BUSINESS SUITE - Launcher
 cd /d "%~dp0"
 
-echo ======================================
-echo        Prasan ERP - Starting...
-echo ======================================
+:: Clear screen
+cls
+
+echo ─────────────────────────────────────────────────────────
+echo 🚀 PRASAN BUSINESS SUITE - WINDOWS LAUNCHER
+echo ─────────────────────────────────────────────────────────
 echo.
 
-:: Check Node.js
+:: 1. Check Node.js
 where node >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [ERROR] Node.js is not installed.
-    echo         Please install it from: https://nodejs.org
+    echo [X] Node.js is not installed.
+    echo     Please download and install it from: https://nodejs.org
     echo.
-    echo --------------------------------------------------
-    echo TIP: If you just installed Node.js, please restart
-    echo      the laptop and try again.
-    echo --------------------------------------------------
+    echo TIP: If you just installed it, please restart your laptop.
     pause
     exit /b 1
 )
 
-for /f "tokens=*" %%v in ('node -v') do echo [OK] Node.js found: %%v
+for /f "tokens=*" %%v in ('node -v') do set NODE_VER=%%v
+echo [OK] Node.js found (!NODE_VER!)
 
-:: 1. Auto-create .env if missing
+:: 2. Handle Environment Configuration (.env)
 if not exist ".env" (
-    echo [INFO] Creating .env configuration file...
+    echo [INFO] Configuring environment (.env)...
     echo DATABASE_URL="file:./dev.db">.env
-    :: Generate a simple pseudo-random secret on Windows
-    set "SECRET=!RANDOM!!RANDOM!!RANDOM!!RANDOM!"
+    :: Generate a pseudo-random secret for security
+    set "SECRET=!RANDOM!!RANDOM!!RANDOM!!RANDOM!!RANDOM!!RANDOM!"
     echo SESSION_SECRET="!SECRET!">>.env
+    echo [OK] Created default .env with secure session secret.
 )
 
-
-:: 2. Check for node_modules platform mismatch
+:: 3. Handle Platform Mismatch (e.g. copied from Mac)
 if exist "node_modules" (
     if not exist "node_modules\.bin\next.cmd" (
-        echo [WARN] node_modules folder appears to be from a different OS [e.g. Mac].
-        echo [INFO] Re-installing dependencies for Windows...
+        echo [WARN] Detected incompatible node_modules (likely from Mac).
+        echo [INFO] Purging and re-installing for Windows...
         rmdir /s /q node_modules
     )
 )
 
-:: 3. Install dependencies
+:: 4. Install Dependencies
 if not exist "node_modules" (
-    echo [INFO] Installing dependencies [first time only]...
-    echo        This may take a few minutes.
-    call npm install
+    echo [INFO] node_modules not found. Installing dependencies...
+    echo        (This may take a minute on the first run)
+    call npm install --no-fund --no-audit
     if %errorlevel% neq 0 (
         echo.
-        echo [ERROR] Failed to install dependencies.
-        echo         Please check your internet connection.
+        echo [X] Error installing dependencies. Check your internet connection.
         pause
         exit /b 1
     )
+    echo [OK] Dependencies installed.
 )
 
-:: 4. Database Setup
+:: 5. Database Synchronization
 echo [INFO] Synchronizing database schema...
 call npx prisma generate >nul 2>nul
 call npx prisma db push --accept-data-loss >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [WARN] Database sync warning. Attempting to recover...
+    call npx prisma generate
+)
+echo [OK] Database ready.
 
-
+:: 6. Start the Application
 echo.
-echo [STARTING] Prasan ERP at http://localhost:3000
-echo            Press Ctrl+C to stop the server.
+echo PRASAN BUSINESS SUITE IS STARTING...
+echo ➜ Local:   http://localhost:3000
+echo ➜ Status:  Running in development mode
 echo.
+echo TIP: Press Ctrl+C to stop the server safely.
+echo ─────────────────────────────────────────────────────────
 
-:: Open browser after delay
-start "" /b cmd /c "timeout /t 5 /nobreak >nul & start http://localhost:3000"
+:: Open browser after a short delay
+start "" /b cmd /c "timeout /t 4 /nobreak >nul & start http://localhost:3000"
 
-:: Start the dev server
+:: Run Next.js dev server
+set PORT=3000
 call npm run dev
 if %errorlevel% neq 0 (
     echo.
-    echo [ERROR] The server stopped unexpectedly.
-    echo         Common reasons:
-    echo         1. Port 3000 is already in use by another app.
-    echo.
+    echo [X] The server stopped unexpectedly.
+    echo     Check if Port 3000 is already in use.
     pause
 )

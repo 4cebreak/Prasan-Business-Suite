@@ -52,7 +52,7 @@ import { useStore } from "@/lib/store"
 import { useEffect } from "react"
 
 export default function Home() {
-  const { organization } = useStore()
+  const { activeOrg } = useStore()
   const [activeTab, setActiveTab] = useState<keyof typeof pageConfig | string>("dashboard")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -66,7 +66,7 @@ export default function Home() {
 
   const currentPage = pageConfig[activeTab as keyof typeof pageConfig] || pageConfig.dashboard
   const PageComponent = currentPage.component
-  const dynamicSubtitle = currentPage.subtitle === "Overview of Parasnath Jeans" ? `Overview of ${organization}` : currentPage.subtitle
+  const dynamicSubtitle = currentPage.subtitle === "Overview of Parasnath Jeans" ? `Overview of ${activeOrg.name}` : currentPage.subtitle
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
