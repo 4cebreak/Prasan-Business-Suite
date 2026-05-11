@@ -11,21 +11,11 @@ import {
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth"
 import { 
-  OrgConfig, Account, LedgerEntry, Invoice, RawMaterial, WIPGood, FinishedGood 
+  OrgConfig, Account, LedgerEntry, Invoice, RawMaterial, WIPGood, FinishedGood, CreateInvoicePayload 
 } from "@/types"
 
 export type { OrgConfig, Account, LedgerEntry, Invoice, RawMaterial, WIPGood, FinishedGood }
 
-interface ItemRow {
-  sno: number
-  style: string
-  brandName: string
-  size: string
-  qty: number
-  rate: number
-  amount: number
-  finishedGoodId?: string
-}
 
 export interface RawMaterialUsage {
   id: string
@@ -64,15 +54,15 @@ interface StoreState {
   loadInvoices: (page?: number) => Promise<void>
   loadInventory: () => Promise<void>
   
-  addAccount: (acc: any) => Promise<string>
-  updateAccount: (id: string, updates: any) => Promise<void>
+  addAccount: (acc: Omit<Account, "id" | "ledger" | "balance" | "orgId">) => Promise<string>
+  updateAccount: (id: string, updates: Partial<Account>) => Promise<void>
   deleteAccount: (id: string) => Promise<void>
-  addLedgerEntry: (accountId: string, entry: any) => Promise<string>
-  updateLedgerEntry: (accountId: string, entryId: string, updates: any) => Promise<void>
+  addLedgerEntry: (accountId: string, entry: Omit<LedgerEntry, "id" | "accountId">) => Promise<string>
+  updateLedgerEntry: (accountId: string, entryId: string, updates: Partial<LedgerEntry>) => Promise<void>
   deleteLedgerEntry: (accountId: string, entryId: string) => Promise<void>
   
-  addInvoice: (payload: any) => Promise<string>
-  updateInvoice: (id: string, updates: any) => Promise<void>
+  addInvoice: (payload: CreateInvoicePayload) => Promise<string>
+  updateInvoice: (id: string, updates: Partial<Invoice>) => Promise<void>
   deleteInvoice: (id: string) => Promise<void>
   
   addOrganization: (name: string) => Promise<void>
@@ -83,14 +73,14 @@ interface StoreState {
   triggerEditInvoiceId: string | null
   setTriggerEditInvoiceId: (id: string | null) => void
 
-  addRawMaterial: (rm: any) => Promise<string>
-  updateRawMaterial: (id: string, updates: any) => void
+  addRawMaterial: (rm: Omit<RawMaterial, "id" | "orgId">) => Promise<string>
+  updateRawMaterial: (id: string, updates: Partial<RawMaterial>) => void
   deleteRawMaterial: (id: string) => void
-  addWIPGood: (wip: any) => Promise<string>
-  updateWIPGood: (id: string, updates: any) => void
+  addWIPGood: (wip: Omit<WIPGood, "id" | "orgId">) => Promise<string>
+  updateWIPGood: (id: string, updates: Partial<WIPGood>) => void
   deleteWIPGood: (id: string) => void
-  addFinishedGood: (fg: any) => Promise<string>
-  updateFinishedGood: (id: string, updates: any) => void
+  addFinishedGood: (fg: Omit<FinishedGood, "id" | "orgId">) => Promise<string>
+  updateFinishedGood: (id: string, updates: Partial<FinishedGood>) => void
   deleteFinishedGood: (id: string) => void
   purgeInventory: () => void
 }
@@ -125,9 +115,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadInventory = useCallback(async () => {
     try {
       const res = await serverListInventory(activeOrgId)
-      setRawMaterials(res.rawMaterials as any)
-      setWipGoods(res.wipGoods as any)
-      setFinishedGoods(res.finishedGoods as any)
+      setRawMaterials(res.rawMaterials as RawMaterial[])
+      setWipGoods(res.wipGoods as WIPGood[])
+      setFinishedGoods(res.finishedGoods as FinishedGood[])
     } catch (err) {
       console.error("Failed to load inventory", err)
     }
@@ -136,15 +126,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refreshData = useCallback(async () => {
     try {
       const res = await fetchStoreContext(activeOrgId)
-      setOrganizations(res.organizations as any)
+      setOrganizations(res.organizations as OrgConfig[])
       
       const accs = await serverListAccounts(activeOrgId)
-      setAccounts(accs as any)
+      setAccounts(accs as Account[])
       
       await loadInvoices(1)
       await loadInventory()
-    } catch (err: any) {
-      if (err.message.includes("Unauthorized")) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Unauthorized")) {
          const session = await validateSession()
          if (session?.isAuthenticated && session.orgId && session.orgId !== activeOrgId) {
             setActiveOrgId(session.orgId)
@@ -178,7 +168,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             setIsLoaded(true)
             return
           }
-        } catch (e) {}
+        } catch {}
 
         const memoryOrgId = localStorage.getItem("jeans_active_org")
         if (memoryOrgId && memoryOrgId !== activeOrgId) {
@@ -200,12 +190,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // --- MUTATIONS ---
 
   // Account & Ledger Mutations
-  const addAccount = async (acc: any) => {
+  const addAccount = async (acc: Omit<Account, "id" | "ledger" | "balance" | "orgId">) => {
     const res = await serverAddAccount(activeOrgId, acc)
     await refreshData()
     return res.id
   }
-  const updateAccount = async (id: string, updates: any) => {
+  const updateAccount = async (id: string, updates: Partial<Account>) => {
     await serverUpdateAccount(id, updates)
     await refreshData()
   }
@@ -213,12 +203,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await serverDeleteAccount(id)
     await refreshData()
   }
-  const addLedgerEntry = async (accId: string, entry: any) => {
+  const addLedgerEntry = async (accId: string, entry: Omit<LedgerEntry, "id" | "accountId">) => {
     const res = await serverAddLedgerEntry(accId, entry)
     await refreshData()
     return res.id
   }
-  const updateLedgerEntry = async (accId: string, entryId: string, updates: any) => {
+  const updateLedgerEntry = async (accId: string, entryId: string, updates: Partial<LedgerEntry>) => {
     await serverUpdateLedgerEntry(accId, entryId, updates)
     await refreshData()
   }
@@ -227,13 +217,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await refreshData()
   }
 
-  const addInvoice = async (payload: any) => {
+  const addInvoice = async (payload: CreateInvoicePayload) => {
     const res = await serverAddInvoice(activeOrgId, payload)
     await refreshData()
     return res.id
   }
 
-  const updateInvoice = async (id: string, updates: any) => {
+  const updateInvoice = async (id: string, updates: Partial<Invoice>) => {
     await serverUpdateInvoice(id, updates)
     await refreshData()
   }
@@ -250,7 +240,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await refreshData()
   }
 
-  const updateOrganization = async (id: string, updates: any) => {
+  const updateOrganization = async (id: string, updates: Partial<OrgConfig>) => {
     await serverUpdateOrganization(id, updates)
     await refreshData()
   }
@@ -263,12 +253,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   // Inventory Mutations
-  const addRawMaterial = async (rm: any) => {
+  const addRawMaterial = async (rm: Omit<RawMaterial, "id" | "orgId">) => {
     const res = await serverAddRawMaterial(activeOrgId, rm)
     await loadInventory()
     return res.id
   }
-  const updateRawMaterial = async (id: string, updates: any) => {
+  const updateRawMaterial = async (id: string, updates: Partial<RawMaterial>) => {
     await serverUpdateRawMaterial(id, updates)
     await loadInventory()
   }
@@ -276,12 +266,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await serverDeleteRawMaterial(id)
     await loadInventory()
   }
-  const addWIPGood = async (wip: any) => {
+  const addWIPGood = async (wip: Omit<WIPGood, "id" | "orgId">) => {
     const res = await serverAddWIPGood(activeOrgId, wip)
     await loadInventory()
     return res.id
   }
-  const updateWIPGood = async (id: string, updates: any) => {
+  const updateWIPGood = async (id: string, updates: Partial<WIPGood>) => {
     await serverUpdateWIPGood(id, updates)
     await loadInventory()
   }
@@ -289,12 +279,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await serverDeleteWIPGood(id)
     await loadInventory()
   }
-  const addFinishedGood = async (fg: any) => {
+  const addFinishedGood = async (fg: Omit<FinishedGood, "id" | "orgId">) => {
     const res = await serverAddFinishedGood(activeOrgId, fg)
     await loadInventory()
     return res.id
   }
-  const updateFinishedGood = async (id: string, updates: any) => {
+  const updateFinishedGood = async (id: string, updates: Partial<FinishedGood>) => {
     await serverUpdateFinishedGood(id, updates)
     await loadInventory()
   }

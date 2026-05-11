@@ -64,12 +64,15 @@ export function SettingsPage() {
   // Initialize/Sync local state when organization changes
   useEffect(() => {
     if (activeOrg) {
-      setLocalOrgName(activeOrg.name || "")
-      setLocalGst(activeOrg.gstNumber || "")
-      setLocalPan(activeOrg.panNumber || "")
-      setLocalAddress(activeOrg.address || "")
-      setLocalCity(activeOrg.city || "")
-      setLocalState(activeOrg.state || "")
+      const id = setTimeout(() => {
+        setLocalOrgName(activeOrg.name || "")
+        setLocalGst(activeOrg.gstNumber || "")
+        setLocalPan(activeOrg.panNumber || "")
+        setLocalAddress(activeOrg.address || "")
+        setLocalCity(activeOrg.city || "")
+        setLocalState(activeOrg.state || "")
+      }, 0)
+      return () => clearTimeout(id)
     }
   }, [activeOrg])
 
@@ -108,7 +111,6 @@ export function SettingsPage() {
   
   // Inventory Warning state
   const [showInventoryWarning, setShowInventoryWarning] = useState(false)
-  const [pendingInventoryState, setPendingInventoryState] = useState(false)
 
   return (
     <div className="p-6">
@@ -535,7 +537,6 @@ export function SettingsPage() {
                     onChange={(e) => {
                       const isEnabled = e.target.checked
                       if (!isEnabled) {
-                        setPendingInventoryState(false)
                         setShowInventoryWarning(true)
                       } else {
                         updateOrganization(activeOrgId, { inventoryEnabled: true })
@@ -630,8 +631,8 @@ export function SettingsPage() {
                         setCurrentPw(""); setNewPw(""); setConfirmPw("")
                         setPwMsg("Password changed successfully!")
                         toast.success("Master password updated")
-                      } catch (err: any) {
-                        setPwMsg(err.message || "Failed to update password")
+                      } catch (err) {
+                        setPwMsg(err instanceof Error ? err.message : "Failed to update password")
                         toast.error("Password update failed")
                       }
                     }}

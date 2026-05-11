@@ -43,8 +43,8 @@ export function Header({ title, subtitle, onMenuClick }: HeaderProps) {
       setOrganization(targetOrg.id)
       setIsPasswordOpen(false)
       toast.success(`Switched to ${targetOrg.name}`)
-    } catch (err: any) {
-      setPasswordError(err.message || "Incorrect password. Access denied.")
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "Incorrect password. Access denied.")
     } finally {
       setIsVerifying(false)
     }

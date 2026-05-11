@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
     "better-sqlite3",
     "@prisma/adapter-better-sqlite3",
   ],
-  // @ts-ignore - Some Next.js versions use this for dev origin matching
+
   allowedDevOrigins: [...localIPs, "localhost:3000"],
   experimental: {
     serverActions: {

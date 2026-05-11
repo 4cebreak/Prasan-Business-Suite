@@ -7,7 +7,6 @@ import { Lock, Eye, EyeOff, ShieldCheck, Building2, KeyRound, Plus } from "lucid
 import { 
   checkFreshInstall, 
   serverAddOrganization, 
-  serverSetMasterPasswordHash, 
   serverListOrganizations, 
   serverLogin,
   serverLogout,
@@ -61,8 +60,8 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
       localStorage.setItem("jeans_setup_complete", "true")
       
       onComplete()
-    } catch (err: any) {
-      setError(err.message || "Setup failed.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Setup failed.")
     }
     setIsSubmitting(false)
   }
@@ -243,8 +242,8 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
       localStorage.setItem("jeans_active_org", selectedOrgId)
       sessionStorage.setItem("jeans_auth", "true")
       onLogin()
-    } catch (err: any) {
-      setError(err.message || "Invalid password. Access denied.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid password. Access denied.")
     } finally {
       setIsVerifying(false)
     }
@@ -266,8 +265,8 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
       localStorage.setItem("jeans_active_org", newId)
       sessionStorage.setItem("jeans_auth", "true")
       onLogin()
-    } catch (err: any) {
-      setError(err.message || "Failed to create business")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create business")
     } finally {
       setIsCreating(false)
     }
@@ -450,7 +449,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            setIsChecking(false)
            return
         }
-      } catch (e) {
+      } catch {
         // Session invalid
       }
 
@@ -460,7 +459,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (fresh) {
           setIsFreshInstall(true)
         }
-      } catch (e) {
+      } catch {
         const hasSetup = localStorage.getItem("jeans_setup_complete")
         if (!hasSetup) setIsFreshInstall(true)
       }

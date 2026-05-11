@@ -269,7 +269,7 @@ function RawMaterialsTab() {
                 {isNewSupplier && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Supplier Type</label>
-                    <select value={supplierType} onChange={e => setSupplierType(e.target.value as any)} className="w-full rounded-xl h-10 border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                    <select value={supplierType} onChange={e => setSupplierType(e.target.value as "Direct" | "Agency")} className="w-full rounded-xl h-10 border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                       <option value="Direct">Direct</option>
                       <option value="Agency">Agency</option>
                     </select>
@@ -609,12 +609,12 @@ function WIPRow({ wip }: { wip: WIPGood }) {
   const [finishLocation, setFinishLocation] = useState("")
 
   // Edit RM state
-  const [editRmItem, setEditRmItem] = useState<any>(null)
+  const [editRmItem, setEditRmItem] = useState<{ id: string, name: string, qty: number, cost: number } | null>(null)
   const [editRmQty, setEditRmQty] = useState("")
   const [isEditRmOpen, setIsEditRmOpen] = useState(false)
 
   // Edit JW state
-  const [editJwItem, setEditJwItem] = useState<any>(null)
+  const [editJwItem, setEditJwItem] = useState<{ id: string, name: string, qty: number, price: number, total: number, supplierName?: string, wipId?: string } | null>(null)
   const [editJwQty, setEditJwQty] = useState("")
   const [editJwPrice, setEditJwPrice] = useState("")
   const [isEditJwOpen, setIsEditJwOpen] = useState(false)
@@ -664,7 +664,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
   const handleAddRM = async () => {
     if (!selectedRm || !rmQty) return
     const newRm = {
-      id: "temp-" + Date.now(),
+      id: "temp-" + window.crypto.randomUUID(),
       wipId: wip.id,
       name: selectedRm.name,
       qty: Number(rmQty),
@@ -688,7 +688,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
   const handleAddJobWork = async () => {
     if (!jwName || !jwSupplier || !jwQty || !jwPrice) return
     const newJw = {
-      id: "temp-" + Date.now(),
+      id: "temp-" + window.crypto.randomUUID(),
       wipId: wip.id,
       name: jwName,
       supplierName: jwSupplier,
@@ -770,7 +770,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
       body: wip.rawMaterials.map(rm => [rm.name, rm.qty.toString(), formatPDFCurrency(rm.cost)])
     })
     
-    const finalY = (doc as any).lastAutoTable.finalY || 35
+    const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 35
     
     autoTable(doc, {
       startY: finalY + 10,
@@ -933,7 +933,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
               <DialogContent className="rounded-2xl">
                 <DialogHeader>
                   <DialogTitle>Finalize Production</DialogTitle>
-                  <DialogDescription>Move "{wip.name}" to Finished Goods.</DialogDescription>
+                  <DialogDescription>Move &quot;{wip.name}&quot; to Finished Goods.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3 py-3">
                   <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-xl border border-border">
@@ -975,7 +975,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
                 </div>
               )}
               <DialogFooter className="flex justify-between items-center sm:justify-between w-full">
-                <Button variant="destructive" size="icon" className="rounded-xl" onClick={() => handleDeleteRmItem(editRmItem?.id)}>
+                <Button variant="destructive" size="icon" className="rounded-xl" onClick={() => editRmItem?.id && handleDeleteRmItem(editRmItem.id)}>
                   <Trash2 className="w-4 h-4"/>
                 </Button>
                 <div className="flex gap-2">
@@ -1008,7 +1008,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
                 </div>
               )}
               <DialogFooter className="flex justify-between items-center sm:justify-between w-full">
-                <Button variant="destructive" size="icon" className="rounded-xl" onClick={() => handleDeleteJwItem(editJwItem?.id)}>
+                <Button variant="destructive" size="icon" className="rounded-xl" onClick={() => editJwItem?.id && handleDeleteJwItem(editJwItem.id)}>
                   <Trash2 className="w-4 h-4"/>
                 </Button>
                 <div className="flex gap-2">
@@ -1177,7 +1177,7 @@ function FinishedGoodsTab() {
                 {isNewFGSupplier && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Supplier Type</label>
-                    <select value={fgSupplierType} onChange={e => setFGSupplierType(e.target.value as any)} className="w-full rounded-xl h-10 border border-input bg-background px-3 text-sm">
+                    <select value={fgSupplierType} onChange={e => setFGSupplierType(e.target.value as "Direct" | "Agency")} className="w-full rounded-xl h-10 border border-input bg-background px-3 text-sm">
                       <option value="Direct">Direct</option>
                       <option value="Agency">Agency</option>
                     </select>
@@ -1323,7 +1323,7 @@ function FinishedGoodsTab() {
                                      <div>
                                        <h4 className="text-sm font-semibold border-b border-border pb-1 mb-2">Raw Materials Consumed</h4>
                                        <div className="space-y-1.5">
-                                         {breakdown.rawMaterials.map((rm: any, i: number) => (
+                                         {breakdown.rawMaterials.map((rm: { qty: number, name: string, cost: number }, i: number) => (
                                            <div key={i} className="flex justify-between text-sm">
                                              <span className="text-muted-foreground">{rm.qty}x {rm.name}</span>
                                              <span className="font-medium">{formatCurrency(rm.cost)}</span>
@@ -1336,7 +1336,7 @@ function FinishedGoodsTab() {
                                      <div>
                                        <h4 className="text-sm font-semibold border-b border-border pb-1 mb-2">Job Work Processes</h4>
                                        <div className="space-y-1.5">
-                                         {breakdown.jobWorks.map((jw: any, i: number) => (
+                                         {breakdown.jobWorks.map((jw: { qty: number, name: string, supplierName: string, total: number }, i: number) => (
                                            <div key={i} className="flex justify-between text-sm">
                                              <div>
                                                <span className="text-muted-foreground">{jw.qty}x {jw.name}</span>
@@ -1350,7 +1350,7 @@ function FinishedGoodsTab() {
                                    )}
                                  </>
                                )
-                             } catch (e) {
+                             } catch {
                                return <div className="text-sm text-muted-foreground text-center">Historical breakdown data is unavailable or corrupted.</div>
                              }
                            })()}

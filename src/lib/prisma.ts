@@ -9,7 +9,8 @@ function createPrismaClient() {
   const dbPath = path.resolve(process.cwd(), "dev.db")
   console.log("Initializing Prisma with DB at:", dbPath)
   const adapter = new PrismaBetterSqlite3({ url: dbPath })
-  return new PrismaClient({ adapter } as any)
+
+  return new PrismaClient({ adapter })
 }
 
 export const prisma = globalForPrisma.prisma || createPrismaClient()

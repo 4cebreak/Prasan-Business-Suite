@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs"
 export { validateSession }
 import { 
   OrgConfig, Account, Invoice, ItemRow, RawMaterial, WIPGood, FinishedGood,
-  PaginatedResponse, CreateInvoicePayload, SystemConfig
+  PaginatedResponse, CreateInvoicePayload, SystemConfig, LedgerEntry
 } from "@/types"
 
 // --- UTILITIES: FIXED-POINT MATH (CENTS) ---
@@ -146,7 +146,7 @@ export async function serverListInvoices(orgId: string, page: number = 1, pageSi
         rate: fromCents(it.rate),
         amount: fromCents(it.amount)
       }))
-    })) as any,
+    })) as Invoice[],
     total,
     page,
     pageSize
@@ -172,7 +172,7 @@ export async function serverListAccounts(orgId: string): Promise<Account[]> {
       netAmount: fromCents(l.netAmount),
       payment: fromCents(l.payment)
     }))
-  })) as any
+  })) as Account[]
 }
 
 export async function serverListInventory(orgId: string) {
@@ -192,7 +192,7 @@ export async function serverListInventory(orgId: string) {
 
 // --- MUTATIONS: INVOICES ---
 
-export async function serverAddInvoice(orgId: string, payload: any) {
+export async function serverAddInvoice(orgId: string, payload: CreateInvoicePayload) {
   await verifySession(orgId)
   return await prisma.$transaction(async (tx) => {
     const invoice = await tx.invoice.create({
@@ -214,7 +214,7 @@ export async function serverAddInvoice(orgId: string, payload: any) {
         status: payload.status,
         orgId,
         items: {
-          create: payload.items.map((it: any) => ({
+          create: payload.items.map(it => ({
             sno: it.sno,
             style: it.style,
             brandName: it.brandName,
@@ -254,7 +254,7 @@ export async function serverAddInvoice(orgId: string, payload: any) {
   })
 }
 
-export async function serverUpdateInvoice(id: string, updates: any) {
+export async function serverUpdateInvoice(id: string, updates: Partial<Invoice>) {
   const inv = await prisma.invoice.findUnique({ where: { id }, include: { items: true, organization: true } })
   if (!inv) throw new Error("Not found")
   await verifySession(inv.orgId)
@@ -286,7 +286,7 @@ export async function serverUpdateInvoice(id: string, updates: any) {
         taxes: updates.taxes !== undefined ? toCents(updates.taxes) : undefined,
         grandTotal: updates.grandTotal !== undefined ? toCents(updates.grandTotal) : undefined,
         items: items ? {
-          create: items.map((it: any) => ({
+          create: items.map((it: Omit<ItemRow, "id" | "invoiceId">) => ({
             sno: it.sno, style: it.style, brandName: it.brandName, size: it.size, qty: it.qty, 
             rate: toCents(it.rate), amount: toCents(it.amount), finishedGoodId: it.finishedGoodId
           }))
@@ -323,16 +323,16 @@ export async function serverDeleteInvoice(id: string) {
 
 // --- MUTATIONS: ACCOUNTS & LEDGER ---
 
-export async function serverAddAccount(orgId: string, payload: any) {
+export async function serverAddAccount(orgId: string, payload: Omit<Account, "id" | "ledger" | "balance" | "orgId">) {
   await verifySession(orgId)
   return await prisma.account.create({ data: { ...payload, orgId, balance: 0 } })
 }
 
-export async function serverUpdateAccount(id: string, updates: any) {
+export async function serverUpdateAccount(id: string, updates: Partial<Account>) {
   const acc = await prisma.account.findUnique({ where: { id } })
   if (!acc) throw new Error("Not found")
   await verifySession(acc.orgId)
-  return await prisma.account.update({ where: { id }, data: updates })
+  return await prisma.account.update({ where: { id }, data: updates as Parameters<typeof prisma.account.update>[0]["data"] })
 }
 
 export async function serverDeleteAccount(id: string) {
@@ -342,7 +342,7 @@ export async function serverDeleteAccount(id: string) {
   return await prisma.account.delete({ where: { id } })
 }
 
-export async function serverAddLedgerEntry(accountId: string, entry: any) {
+export async function serverAddLedgerEntry(accountId: string, entry: Omit<LedgerEntry, "id" | "accountId">) {
   const acc = await prisma.account.findUnique({ where: { id: accountId } })
   if (!acc) throw new Error("Not found")
   await verifySession(acc.orgId)
@@ -358,7 +358,7 @@ export async function serverAddLedgerEntry(accountId: string, entry: any) {
   })
 }
 
-export async function serverUpdateLedgerEntry(accountId: string, entryId: string, updates: any) {
+export async function serverUpdateLedgerEntry(accountId: string, entryId: string, updates: Partial<LedgerEntry>) {
   const acc = await prisma.account.findUnique({ where: { id: accountId } })
   if (!acc) throw new Error("Not found")
   await verifySession(acc.orgId)
@@ -392,11 +392,11 @@ export async function serverDeleteLedgerEntry(accountId: string, entryId: string
 
 // --- MUTATIONS: INVENTORY ---
 
-export async function serverAddRawMaterial(orgId: string, payload: any) {
+export async function serverAddRawMaterial(orgId: string, payload: Omit<RawMaterial, "id" | "orgId">) {
   await verifySession(orgId)
   return await prisma.rawMaterial.create({ data: { ...payload, date: new Date(payload.date), price: toCents(payload.price), total: toCents(payload.total), orgId } })
 }
-export async function serverUpdateRawMaterial(id: string, updates: any) {
+export async function serverUpdateRawMaterial(id: string, updates: Partial<RawMaterial>) {
   const rm = await prisma.rawMaterial.findUnique({ where: { id } })
   if (!rm) throw new Error("Not found")
   await verifySession(rm.orgId)
@@ -409,18 +409,18 @@ export async function serverDeleteRawMaterial(id: string) {
   return await prisma.rawMaterial.delete({ where: { id } })
 }
 
-export async function serverAddWIPGood(orgId: string, payload: any) {
+export async function serverAddWIPGood(orgId: string, payload: Omit<WIPGood, "id" | "orgId">) {
   await verifySession(orgId)
   const { rawMaterials, jobWorks, ...rest } = payload
   return await prisma.wIPGood.create({
     data: {
       ...rest, date: new Date(payload.date), totalCost: toCents(payload.totalCost), orgId,
-      rawMaterials: { create: rawMaterials.map((rm: any) => ({ ...rm, cost: toCents(rm.cost) })) },
-      jobWorks: { create: jobWorks.map((jw: any) => ({ ...jw, price: toCents(jw.price), total: toCents(jw.total) })) }
+      rawMaterials: { create: rawMaterials.map(rm => ({ ...rm, cost: toCents(rm.cost) })) },
+      jobWorks: { create: jobWorks.map(jw => ({ ...jw, price: toCents(jw.price), total: toCents(jw.total) })) }
     }
   })
 }
-export async function serverUpdateWIPGood(id: string, updates: any) {
+export async function serverUpdateWIPGood(id: string, updates: Partial<WIPGood>) {
   const wip = await prisma.wIPGood.findUnique({ where: { id } })
   if (!wip) throw new Error("Not found")
   await verifySession(wip.orgId)
@@ -432,8 +432,8 @@ export async function serverUpdateWIPGood(id: string, updates: any) {
       where: { id },
       data: {
         ...rest, date: updates.date ? new Date(updates.date) : undefined, totalCost: toCents(updates.totalCost),
-        rawMaterials: rawMaterials ? { create: rawMaterials.map((rm: any) => ({ ...rm, cost: toCents(rm.cost) })) } : undefined,
-        jobWorks: jobWorks ? { create: jobWorks.map((jw: any) => ({ ...jw, price: toCents(jw.price), total: toCents(jw.total) })) } : undefined
+        rawMaterials: rawMaterials ? { create: rawMaterials.map(rm => ({ ...rm, cost: toCents(rm.cost) })) } : undefined,
+        jobWorks: jobWorks ? { create: jobWorks.map(jw => ({ ...jw, price: toCents(jw.price), total: toCents(jw.total) })) } : undefined
       }
     })
   })
@@ -445,11 +445,11 @@ export async function serverDeleteWIPGood(id: string) {
   return await prisma.wIPGood.delete({ where: { id } })
 }
 
-export async function serverAddFinishedGood(orgId: string, payload: any) {
+export async function serverAddFinishedGood(orgId: string, payload: Omit<FinishedGood, "id" | "orgId">) {
   await verifySession(orgId)
   return await prisma.finishedGood.create({ data: { ...payload, date: new Date(payload.date), cost: toCents(payload.cost), orgId } })
 }
-export async function serverUpdateFinishedGood(id: string, updates: any) {
+export async function serverUpdateFinishedGood(id: string, updates: Partial<FinishedGood>) {
   const fg = await prisma.finishedGood.findUnique({ where: { id } })
   if (!fg) throw new Error("Not found")
   await verifySession(fg.orgId)
@@ -479,7 +479,7 @@ export async function serverListOrganizations() {
   })
 }
 
-export async function serverUpdateOrganization(id: string, updates: any) {
+export async function serverUpdateOrganization(id: string, updates: Partial<OrgConfig>) {
   await verifySession(id)
   return await prisma.organization.update({ where: { id }, data: updates })
 }
@@ -507,10 +507,10 @@ export async function checkAndMigrateDB() {
     let config = null
     try {
       config = await prisma.systemConfig.findUnique({ where: { id: "global" } })
-    } catch (e: any) {
+    } catch (e) {
       // If table doesn't exist (P2021), it's a legacy or fresh DB.
       // We'll handle creation in the next block.
-      if (e.code !== "P2021") throw e
+      if ((e as { code?: string }).code !== "P2021") throw e
     }
     
     // If no config exists, create it as version 2 (assuming new DB is always current)
@@ -615,8 +615,8 @@ export async function checkAndMigrateDB() {
 
     console.log("[Migration] Database successfully migrated to cents.")
     return { success: true, migrated: true }
-  } catch (err: any) {
+  } catch (err) {
     console.error("[Migration] CRITICAL ERROR:", err)
-    return { success: false, error: err.message }
+    return { success: false, error: err instanceof Error ? err.message : String(err) }
   }
 }

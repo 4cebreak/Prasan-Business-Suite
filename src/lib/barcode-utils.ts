@@ -33,7 +33,7 @@ export const printBarcodes = (items: Array<{
         textxalign: 'center',
       })
       return canvas.toDataURL()
-    } catch (e) {
+    } catch {
       return ""
     }
   }

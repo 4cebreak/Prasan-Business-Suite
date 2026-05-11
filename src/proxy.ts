@@ -2,21 +2,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { decrypt } from "@/lib/session";
 
-// Routes that don't require authentication
-const publicRoutes = ["/", "/api/auth"];
-
 export async function proxy(req: NextRequest) {
-  const path = req.nextUrl.pathname;
-  const isPublicRoute = publicRoutes.includes(path);
-
   // Check for session cookie
   const cookie = req.cookies.get("jeans_session")?.value;
-  let session = null;
   
   if (cookie) {
     try {
-      session = await decrypt(cookie);
-    } catch (e) {
+      await decrypt(cookie);
+    } catch {
       // Invalid session
     }
   }

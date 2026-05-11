@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn, formatCurrency as globalFormatCurrency } from "@/lib/utils"
 import { useStore, Account, LedgerEntry } from "@/lib/store"
+import { exportLedgerPDF, splitParty } from "@/lib/pdf-service"
 
 const PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "Google Pay", "NEFT/RTGS"]
 
@@ -52,13 +53,16 @@ export function AccountsPage() {
 
   // Load staged ledger when account is selected
   useEffect(() => {
-    if (selectedAccount) {
-      setStagedLedger(selectedAccount.ledger)
-      setOriginalLedger(selectedAccount.ledger)
-    } else {
-      setStagedLedger([])
-      setOriginalLedger([])
-    }
+    const id = setTimeout(() => {
+      if (selectedAccount) {
+        setStagedLedger(selectedAccount.ledger)
+        setOriginalLedger(selectedAccount.ledger)
+      } else {
+        setStagedLedger([])
+        setOriginalLedger([])
+      }
+    }, 0)
+    return () => clearTimeout(id)
   }, [selectedAccountId, accounts]) // sync with store changes too
 
   const hasChanges = JSON.stringify(stagedLedger) !== JSON.stringify(originalLedger)
@@ -76,14 +80,7 @@ export function AccountsPage() {
     return today.toISOString().split("T")[0]
   })
 
-  const splitParty = (partyStr: string) => {
-    if (!partyStr) return { invNo: "-", party: "-" };
-    if (partyStr.includes(" - ")) {
-      const parts = partyStr.split(" - ");
-      return { invNo: parts[0], party: parts.slice(1).join(" - ") };
-    }
-    return { invNo: "-", party: partyStr };
-  }
+
 
   const [entryInvoiceNo, setEntryInvoiceNo] = useState("")
   const [entryParty, setEntryParty] = useState("")
@@ -310,142 +307,8 @@ export function AccountsPage() {
   const totalLedgerPayment = sortedLedger.reduce((sum, e) => sum + (e.payment || 0), 0)
 
   const generateLedgerPDF = async (entriesToExport: LedgerEntry[] = sortedLedger) => {
-    if (!selectedAccount || !selectedAccountId) return
-
-    const { jsPDF } = await import("jspdf")
-    const autoTable = (await import("jspdf-autotable")).default
-    
-    const doc = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: 'a4'
-    })
-    const primaryColor = [16, 133, 252] as [number, number, number]
-    
-    // Header
-    doc.setFontSize(24)
-    doc.setTextColor(...primaryColor)
-    doc.text(activeOrg.name || "ABC Company", 14, 20)
-    
-    doc.setFontSize(9)
-    doc.setTextColor(100)
-    doc.text(`Ledger Statement: ${selectedAccount.name}`, 14, 28)
-    if (selectedAccount.station) {
-      doc.text(`Station: ${selectedAccount.station}`, 14, 34)
-    }
-
-    doc.setFontSize(18)
-    doc.setTextColor(0, 0, 0)
-    doc.text("LEDGER", 230, 20)
-
-    doc.setFontSize(9)
-    const today = new Date().toLocaleDateString("en-IN")
-    doc.text(`Generated: ${today}`, 230, 28)
-
-    const exportLedgerAmount = entriesToExport.reduce((sum, e) => sum + (e.amount || 0), 0)
-    const exportLedgerDiscount = entriesToExport.reduce((sum, e) => sum + (e.discount || 0), 0)
-    const exportLedgerTax = entriesToExport.reduce((sum, e) => sum + (e.taxOrPaid || 0), 0)
-    const exportLedgerNet = entriesToExport.reduce((sum, e) => sum + (e.netAmount || 0), 0)
-    const exportLedgerPayment = entriesToExport.reduce((sum, e) => sum + (e.payment || 0), 0)
-    const finalNetBalance = exportLedgerNet - exportLedgerPayment
-
-    const formatPdfCurrency = (amt: number) => globalFormatCurrency(amt, { showSymbol: false })
-    const formatPdfSignedCurrency = (amt: number) => globalFormatCurrency(amt, { showSign: true, showSymbol: false })
-
-    const tableData = entriesToExport.map(entry => {
-      const sp = splitParty(entry.party || "");
-      return [
-        new Date(entry.date).toLocaleDateString('en-GB'),
-        sp.invNo,
-        sp.party + (entry.type === 'payment' && entry.paymentMode ? `\n(${entry.paymentMode})` : ""),
-        entry.station || "",
-        entry.amount ? formatPdfCurrency(entry.amount) : "",
-        entry.discount ? `-${formatPdfCurrency(entry.discount)}` : "",
-        entry.taxOrPaid ? formatPdfCurrency(entry.taxOrPaid) : "",
-        entry.netAmount ? formatPdfCurrency(entry.netAmount) : "",
-        entry.items || "",
-        entry.payment ? formatPdfCurrency(entry.payment) : ""
-      ]
-    })
-
-    autoTable(doc, {
-      startY: 40,
-      head: [['Date', 'Inv No', 'Party', 'Station', 'Amount (Rs)', 'Discount', 'Taxes+Expense', 'Net Amount (Rs)', 'ITEMS', 'Payment (Rs)']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { 
-        fillColor: [240, 240, 240], 
-        textColor: [0, 0, 0], 
-        fontStyle: 'bold', 
-        halign: 'center', 
-        lineWidth: 0.2, 
-        lineColor: [0, 0, 0],
-        fontSize: 8
-      },
-      bodyStyles: { 
-        textColor: [0, 0, 0], 
-        lineColor: [0, 0, 0],
-        fontSize: 8,
-        cellPadding: 2
-      },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 20 }, // Date
-        1: { halign: 'center', cellWidth: 15 }, // Inv No
-        2: { halign: 'left', cellWidth: 'auto' }, // Party
-        3: { halign: 'center', cellWidth: 20 }, // Station
-        4: { halign: 'right', cellWidth: 26 },  // Amount
-        5: { halign: 'right', cellWidth: 22 },  // Discount
-        6: { halign: 'right', cellWidth: 26 },  // Taxes+Expense
-        7: { halign: 'right', fontStyle: 'bold', cellWidth: 28 }, // Net Amount
-        8: { halign: 'center', cellWidth: 30 }, // Items
-        9: { halign: 'right', fontStyle: 'bold', cellWidth: 28 }  // Payment
-      },
-      didParseCell: (data) => {
-        // Style 'OLD BALANCE' rows with yellow highlight
-        const partyCell = data.row.cells[2]?.text?.[0] || ""
-        if (partyCell.toUpperCase().includes("OLD BALANCE") || partyCell.toUpperCase().includes("OPENING BALANCE")) {
-          data.cell.styles.fillColor = [255, 255, 0] // Yellow
-          data.cell.styles.fontStyle = 'bold'
-        }
-      },
-      foot: [
-        [
-          '', 
-          '', 
-          '', 
-          'TOTAL',
-          exportLedgerAmount ? formatPdfCurrency(exportLedgerAmount) : "", 
-          exportLedgerDiscount ? `-${formatPdfCurrency(exportLedgerDiscount)}` : "", 
-          exportLedgerTax ? formatPdfCurrency(exportLedgerTax) : "", 
-          exportLedgerNet ? formatPdfCurrency(exportLedgerNet) : "", 
-          '', 
-          exportLedgerPayment ? formatPdfCurrency(exportLedgerPayment) : ""
-        ],
-        [
-          { content: 'NET BALANCE (Rs.):', colSpan: 7, styles: { halign: 'right', fontSize: 14, fontStyle: 'bold', cellPadding: 3 } },
-          { content: formatPdfSignedCurrency(finalNetBalance), colSpan: 3, styles: { halign: 'right', fontSize: 18, fontStyle: 'bold', cellPadding: 3 } }
-        ]
-      ],
-      footStyles: { 
-        fillColor: [255, 255, 255], 
-        textColor: [0, 0, 0], 
-        fontStyle: 'bold', 
-        lineWidth: 0.2, 
-        lineColor: [0, 0, 0] 
-      }
-    })
-
-    const safeFilename = `${selectedAccount.name}_Ledger`.replace(/[^a-zA-Z0-9_-]/g, '_')
-    
-    const blob = doc.output("blob")
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${safeFilename}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    if (!selectedAccount || !selectedAccountId || !activeOrg) return
+    await exportLedgerPDF(entriesToExport, selectedAccount, activeOrg)
   }
 
   const handleExportSelectedRows = () => {

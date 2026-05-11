@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Search, Plus, FileText, Download, Edit2, Eye, MoreHorizontal, CheckCircle, Clock, XCircle, Trash2, Barcode } from "lucide-react"
 import { printBarcodes } from "@/lib/barcode-utils"
-
+import { exportInvoicePDF } from "@/lib/pdf-service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -51,7 +51,7 @@ export function InvoicesPage() {
   const [isNewCustomer, setIsNewCustomer] = useState(false)
   const [newCustomerType, setNewCustomerType] = useState<"Direct" | "Agency">("Direct")
   
-  const [items, setItems] = useState<Partial<ItemRow>[]>([{
+  const [items, setItems] = useState<(Omit<ItemRow, "id" | "invoiceId"> & { id?: string })[]>([{
     sno: 1, style: "", brandName: "", size: "", qty: 1, rate: 0, amount: 0, finishedGoodId: ""
   }])
 
@@ -118,9 +118,13 @@ export function InvoicesPage() {
     if (triggerEditInvoiceId) {
       const inv = invoices.find(i => i.id === triggerEditInvoiceId)
       if (inv) {
-        openEditInvoice(inv)
+        const id1 = setTimeout(() => openEditInvoice(inv), 0)
+        const id2 = setTimeout(() => setTriggerEditInvoiceId(null), 0)
+        return () => { clearTimeout(id1); clearTimeout(id2) }
+      } else {
+        const id = setTimeout(() => setTriggerEditInvoiceId(null), 0)
+        return () => clearTimeout(id)
       }
-      setTriggerEditInvoiceId(null)
     }
   }, [triggerEditInvoiceId, invoices, setTriggerEditInvoiceId])
 
@@ -131,8 +135,8 @@ export function InvoicesPage() {
   const handleItemChange = (index: number, field: string, value: string | number) => {
     const newItems = [...items]
     // Clone the specific item object to avoid mutating the original store object
-    const item = { ...newItems[index] } as any
-    item[field] = value
+    const item = { ...newItems[index] };
+    (item as Record<string, string | number>)[field] = value
     
     // Auto-calculate amount
     if (field === 'qty' || field === 'rate') {
@@ -203,18 +207,20 @@ export function InvoicesPage() {
         discount: Number(discount) || 0,
         taxes: effectiveTaxes,
         grandTotal,
-        accountId // NEW: Pass the accountId for server-side linking
+        accountId, // NEW: Pass the accountId for server-side linking
+        status: "pending" as const
       }
 
       try {
+        const payload = { ...invoiceData, items: invoiceData.items as ItemRow[] };
         if (editingInvoiceId) {
-          await updateInvoice(editingInvoiceId, invoiceData)
+          await updateInvoice(editingInvoiceId, payload)
         } else {
-          await addInvoice(invoiceData)
+          await addInvoice(payload)
         }
         setIsDialogOpen(false)
-      } catch (err: any) {
-        toast.error(err.message || "Operation failed")
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Operation failed")
       }
     }
   }
@@ -248,8 +254,8 @@ export function InvoicesPage() {
   const handleDeleteInvoice = async (invoice: Invoice) => {
     try {
       await deleteInvoice(invoice.id)
-    } catch (err: any) {
-      toast.error(err.message || "Deletion failed")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Deletion failed")
     }
   }
 
@@ -266,121 +272,8 @@ export function InvoicesPage() {
   }
 
   const generatePDF = async (invoice: Invoice) => {
-    const { jsPDF } = await import("jspdf")
-    const autoTable = (await import("jspdf-autotable")).default
-    
-    const doc = new jsPDF()
-    const primaryColor = [16, 133, 252] as [number, number, number]
-    
-    // Header
-    doc.setFontSize(28)
-    doc.setTextColor(...primaryColor)
-    doc.text(activeOrg.name || "Parasnath Jeans", 14, 22)
-    
-    doc.setFontSize(10)
-    doc.setTextColor(80)
-    const orgAddress = activeOrg?.address || ""
-    const orgCity = activeOrg?.city || ""
-    const orgState = activeOrg?.state || ""
-    const fullAddress = [orgAddress, orgCity, orgState].filter(Boolean).join(", ")
-    doc.text(fullAddress, 14, 30)
-    if (activeOrg?.gstNumber) {
-      doc.text(`GST: ${activeOrg.gstNumber}`, 14, 35)
-    }
-    
-    doc.setFontSize(20)
-    doc.setTextColor(0, 0, 0)
-    doc.text("INVOICE", 140, 22)
-
-    doc.setFontSize(10)
-    doc.text(`Invoice No: ${invoice.invoiceNo}`, 140, 30)
-    doc.text(`Date: ${formatDate(invoice.date)}`, 140, 36)
-    
-    let metaY = 42
-    if (invoice.transport) { doc.text(`Transport: ${invoice.transport}`, 140, metaY); metaY+=6 }
-    if (invoice.marka) { doc.text(`Marka: ${invoice.marka}`, 140, metaY); metaY+=6 }
-    if (invoice.remarks) { doc.text(`Remarks: ${invoice.remarks}`, 140, metaY); metaY+=6 }
-
-    // Bill To
-    doc.setFontSize(12)
-    doc.setTextColor(...primaryColor)
-    doc.text("BILL TO:", 14, 46)
-    
-    doc.setFontSize(11)
-    doc.setTextColor(0, 0, 0)
-    doc.text(invoice.customerName, 14, 54)
-    
-    let bY = 60
-    if (invoice.agencyName) { doc.text(`Agency: ${invoice.agencyName}`, 14, bY); bY+=6 }
-    if (invoice.city) { doc.text(`City: ${invoice.city}`, 14, bY); bY+=6 }
-
-    // Table
-    const showBrand = activeOrg?.invoiceShowBrandName !== false
-    const showSize = activeOrg?.invoiceShowSize !== false
-
-    const tableHead = [
-      'S.No', 
-      'Product', 
-      ...(showBrand ? [activeOrg?.invoiceBrandNameLabel || 'Brand Name'] : []),
-      ...(showSize ? [activeOrg?.invoiceSizeLabel || 'Size'] : []),
-      'Qty', 
-      'Price (Rs)', 
-      'Amount (Rs)'
-    ]
-
-    const formatPdfCurrency = (amount: number) => {
-      return Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    }
-
-    const tableData = invoice.items.map(item => [
-      item.sno, 
-      item.style || "", 
-      ...(showBrand ? [item.brandName || ""] : []),
-      ...(showSize ? [item.size || ""] : []),
-      item.qty, 
-      formatPdfCurrency(item.rate), 
-      formatPdfCurrency(item.amount)
-    ])
-
-    const footColSpan = 2 + (showBrand ? 1 : 0) + (showSize ? 1 : 0)
-    const footEmptyCols = Array(footColSpan).fill('')
-
-    autoTable(doc, {
-      startY: Math.max(bY, metaY) + 10,
-      head: [tableHead],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: primaryColor },
-      foot: [
-        [...footEmptyCols, 'Subtotal', '', formatPdfCurrency(invoice.subtotal)],
-        [...footEmptyCols, 'Discount', '', `-${formatPdfCurrency(invoice.discount)}`],
-        [...footEmptyCols, 'Taxes+Expense', '', `+${formatPdfCurrency((invoice.taxes || 0) + (invoice.transportCharges || 0))}`],
-        [...footEmptyCols, 'Grand Total (Rs)', '', formatPdfCurrency(invoice.grandTotal)],
-      ],
-      footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 15 }, // S.No
-        1: { halign: 'left', cellWidth: 'auto' }, // Product
-        ...(showBrand ? { 2: { halign: 'left', cellWidth: 'auto' } } : {}), // Brand
-        ...(showSize ? { [showBrand ? 3 : 2]: { halign: 'center', cellWidth: 20 } } : {}), // Size
-        [footColSpan - 2]: { halign: 'center', cellWidth: 20 }, // Qty
-        [footColSpan - 1]: { halign: 'right', cellWidth: 35 }, // Price
-        [footColSpan]: { halign: 'right', cellWidth: 35 } // Amount
-      }
-    })
-
-    const safeFilename = (invoice.invoiceNo || 'invoice').replace(/[^a-zA-Z0-9_-]/g, '_')
-    
-    // Explicit HTML5 strict local download to guarantee exact filename behavior:
-    const blob = doc.output("blob")
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${safeFilename}.pdf`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    if (!activeOrg) return
+    await exportInvoicePDF(invoice, activeOrg)
   }
 
   const totalAmount = invoices.reduce((sum, inv) => sum + inv.grandTotal, 0)
@@ -474,7 +367,7 @@ export function InvoicesPage() {
                       <div className="ml-auto">
                         <select
                           value={newCustomerType}
-                          onChange={(e) => setNewCustomerType(e.target.value as any)}
+                          onChange={(e) => setNewCustomerType(e.target.value as "Direct" | "Agency")}
                           className="rounded-lg h-9 bg-background border border-border text-sm px-3 focus-visible:ring-primary outline-none font-medium shadow-sm"
                         >
                           <option value="Direct">Direct</option>
@@ -602,7 +495,7 @@ export function InvoicesPage() {
                                 const fg = finishedGoods.find(f => f.id === fgId);
                                 if (fg) {
                                   const newItems = [...items];
-                                  const it = newItems[idx] as any;
+                                  const it = newItems[idx];
                                   it.finishedGoodId = fg.id;
                                   it.style = fg.name;
                                   it.size = fg.size || "";

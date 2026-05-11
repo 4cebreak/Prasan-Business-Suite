@@ -224,7 +224,7 @@ export function BarcodePage() {
         <CardContent className="p-4 flex items-start gap-3">
           <RefreshCw className="w-5 h-5 text-primary mt-0.5" />
           <div className="text-sm">
-            <span className="font-bold">Pro Tip:</span> Connect your Thermal Label Printer (like Zebra or TSC) and set the page size to 2"x1" in the browser print dialog for perfect results.
+            <span className="font-bold">Pro Tip:</span> Connect your Thermal Label Printer (like Zebra or TSC) and set the page size to 2&quot;x1&quot; in the browser print dialog for perfect results.
           </div>
         </CardContent>
       </Card>
