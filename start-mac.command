@@ -34,15 +34,24 @@ if [ ! -f ".env" ]; then
     SECRET=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)
     echo "SESSION_SECRET=\"$SECRET\"" >> .env
     echo "   ✓ Created default .env with secure session secret."
+else
+    # Check for corrupted .env
+    if ! grep -q "DATABASE_URL" .env; then
+        echo "⚠️  .env file appears corrupted. Resetting..."
+        echo 'DATABASE_URL="file:./dev.db"' > .env
+        SECRET=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)
+        echo "SESSION_SECRET=\"$SECRET\"" >> .env
+    fi
 fi
 
 # 4. Handle Platform Mismatch (e.g. copied from Windows)
 if [ -d "node_modules" ]; then
-    # Simple check for macOS compatibility
-    if [[ ! -d "node_modules/.bin" ]]; then
-        echo "⚠️  Detected incompatible node_modules (likely from another OS)."
+    # Simple check for macOS compatibility (checking for the binary symlink)
+    if [[ ! -L "node_modules/.bin/next" && ! -f "node_modules/.bin/next" ]]; then
+        echo "⚠️  Detected incompatible node_modules (likely from Windows)."
         echo "📦 Purging and re-installing for macOS..."
         rm -rf node_modules
+        rm -rf .next
     fi
 fi
 
@@ -60,12 +69,10 @@ fi
 
 # 6. Database Synchronization
 echo "🗄️  Synchronizing database schema..."
-# Generate Prisma Client
-npx prisma generate &> /dev/null
-# Sync schema (db push is used for SQLite dev flow)
-npx prisma db push --accept-data-loss &> /dev/null
+npx prisma generate
+npx prisma db push --accept-data-loss
 if [ $? -ne 0 ]; then
-    echo "⚠️  Database sync warning. Attempting to recover..."
+    echo "⚠️  Database sync issue. Attempting to recover..."
     npx prisma generate
 fi
 echo "   ✓ Database ready."
@@ -80,8 +87,9 @@ echo "💡 TIP: Press Ctrl+C to stop the server safely."
 echo "─────────────────────────────────────────────────────────"
 
 # Open browser after a short delay
-(sleep 4 && open http://localhost:3000) &
+(sleep 6 && open http://localhost:3000) &
 
 # Run Next.js dev server
 export PORT=3000
+export NEXT_TELEMETRY_DISABLED=1
 npm run dev

@@ -33,12 +33,21 @@ if not exist ".env" (
     set "SECRET=!RANDOM!!RANDOM!!RANDOM!!RANDOM!!RANDOM!!RANDOM!"
     echo SESSION_SECRET="!SECRET!">>.env
     echo [OK] Created default .env with secure session secret.
+) else (
+    :: Check for corrupted .env (common during copy-paste)
+    findstr "DATABASE_URL" .env >nul
+    if %errorlevel% neq 0 (
+        echo [WARN] .env file appears corrupted. Resetting...
+        echo DATABASE_URL="file:./dev.db">.env
+        set "SECRET=!RANDOM!!RANDOM!!RANDOM!!RANDOM!!RANDOM!!RANDOM!"
+        echo SESSION_SECRET="!SECRET!">>.env
+    )
 )
 
 :: 3. Handle Platform Mismatch (e.g. copied from Mac)
 if exist "node_modules" (
     if not exist "node_modules\.bin\next.cmd" (
-        echo [WARN] Detected incompatible node_modules (likely from Mac).
+        echo [WARN] Detected incompatible node_modules (likely from Mac/Linux).
         echo [INFO] Purging and re-installing for Windows...
         rmdir /s /q node_modules
     )
@@ -47,11 +56,12 @@ if exist "node_modules" (
 :: 4. Install Dependencies
 if not exist "node_modules" (
     echo [INFO] node_modules not found. Installing dependencies...
-    echo        (This may take a minute on the first run)
+    echo        (This may take a few minutes on the first run)
     call npm install --no-fund --no-audit
     if %errorlevel% neq 0 (
         echo.
-        echo [X] Error installing dependencies. Check your internet connection.
+        echo [X] Error installing dependencies. 
+        echo     Please check your internet connection and ensure Node.js is correctly installed.
         pause
         exit /b 1
     )
@@ -60,32 +70,45 @@ if not exist "node_modules" (
 
 :: 5. Database Synchronization
 echo [INFO] Synchronizing database schema...
-call npx prisma generate >nul 2>nul
-call npx prisma db push --accept-data-loss >nul 2>nul
+call npx prisma generate
 if %errorlevel% neq 0 (
-    echo [WARN] Database sync warning. Attempting to recover...
+    echo [X] Error generating Prisma client.
+    pause
+    exit /b 1
+)
+
+call npx prisma db push --accept-data-loss
+if %errorlevel% neq 0 (
+    echo [WARN] Database sync issue. If this is the first time, this is normal.
+    echo        Attempting second pass...
     call npx prisma generate
 )
 echo [OK] Database ready.
 
 :: 6. Start the Application
 echo.
-echo PRASAN BUSINESS SUITE IS STARTING...
-echo ➜ Local:   http://localhost:3000
-echo ➜ Status:  Running in development mode
-echo.
-echo TIP: Press Ctrl+C to stop the server safely.
 echo ─────────────────────────────────────────────────────────
+echo 📦 PRASAN BUSINESS SUITE IS STARTING...
+echo ➜ Local:   http://localhost:3000
+echo ➜ Status:  Initializing server...
+echo ─────────────────────────────────────────────────────────
+echo.
 
-:: Open browser after a short delay
-start "" /b cmd /c "timeout /t 4 /nobreak >nul & start http://localhost:3000"
+:: Open browser after a longer delay to ensure server is ready
+start "" /b cmd /c "timeout /t 8 /nobreak >nul & start http://localhost:3000"
 
 :: Run Next.js dev server
 set PORT=3000
+set NEXT_TELEMETRY_DISABLED=1
 call npm run dev
+
 if %errorlevel% neq 0 (
     echo.
-    echo [X] The server stopped unexpectedly.
-    echo     Check if Port 3000 is already in use.
+    echo [X] The server stopped unexpectedly (Code: %errorlevel%).
+    echo     Possible reasons:
+    echo     1. Port 3000 is already in use by another app.
+    echo     2. Node.js version is incompatible (v18+ recommended).
+    echo     3. Corrupted node_modules (Try deleting the folder and restarting).
+    echo.
     pause
 )

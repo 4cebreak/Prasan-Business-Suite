@@ -38,7 +38,7 @@ export function BarcodePage() {
         includetext: true,     // Show human-readable text
         textxalign: 'center',  // Always good to set this
       })
-    } catch (e) {
+    } catch {
       // Ignore errors during typing
     }
   }, [barcodeData])

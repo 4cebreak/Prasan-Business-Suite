@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/prisma"
-import { getSession, login as setSession, verifySession, validateSession } from "@/lib/session"
+import { login as setSession, verifySession, validateSession } from "@/lib/session"
 import bcrypt from "bcryptjs"
 
 export { validateSession }
@@ -61,7 +61,7 @@ export async function serverAddOrganization(
   if (count > 0) {
     try {
       await verifySession()
-    } catch (e) {
+    } catch {
       if (!authorizingPassword) throw new Error("Unauthorized: Session or Admin Password required")
       
       const sysConfig = await prisma.systemConfig.findFirst()

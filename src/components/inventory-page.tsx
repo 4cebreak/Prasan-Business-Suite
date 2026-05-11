@@ -1,8 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { useStore, RawMaterial, WIPGood, FinishedGood } from "@/lib/store"
-import { Package, Truck, Hammer, Box, Plus, Trash2, ArrowRight, ChevronDown, ChevronUp, Search, Download, Edit } from "lucide-react"
+import { useStore, RawMaterial, WIPGood } from "@/lib/store"
+import { Truck, Hammer, Box, Plus, Trash2, ArrowRight, ChevronDown, ChevronUp, Search, Download, Edit } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -20,21 +20,13 @@ import {
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
-// Utility - Simplified number format
-const getFormatCurrency = (currency?: string) => (amount: number) => globalFormatCurrency(amount)
+const getFormatCurrency = () => (amount: number) => globalFormatCurrency(amount)
 
 const formatPDFCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(amount)
 }
 
 export function InventoryPage() {
-  const { 
-    rawMaterials, wipGoods, finishedGoods, 
-    addRawMaterial, deleteRawMaterial, updateRawMaterial,
-    addWIPGood, updateWIPGood, deleteWIPGood,
-    addFinishedGood, updateFinishedGood, deleteFinishedGood,
-    accounts, addAccount, addLedgerEntry
-  } = useStore()
 
   const [activeTab, setActiveTab] = useState<"raw" | "wip" | "finished">("raw")
 
@@ -79,8 +71,8 @@ export function InventoryPage() {
 // RAW MATERIALS TAB
 // -------------------------------------------------------------------------
 function RawMaterialsTab() {
-  const { rawMaterials, addRawMaterial, updateRawMaterial, deleteRawMaterial, accounts, addAccount, addLedgerEntry, activeOrg } = useStore()
-  const formatCurrency = getFormatCurrency(activeOrg?.currency)
+  const { rawMaterials, addRawMaterial, updateRawMaterial, deleteRawMaterial, accounts, addAccount, addLedgerEntry } = useStore()
+  const formatCurrency = getFormatCurrency()
   
   const [isOpen, setIsOpen] = useState(false)
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
@@ -144,7 +136,7 @@ function RawMaterialsTab() {
     }
 
     // Add Raw Material
-    const rmId = await addRawMaterial({
+    await addRawMaterial({
       date: new Date(date).toISOString(),
       name,
       type,
@@ -452,8 +444,8 @@ function RawMaterialsTab() {
 // WORK IN PROGRESS TAB
 // -------------------------------------------------------------------------
 function WIPTab() {
-  const { wipGoods, addWIPGood, updateWIPGood, deleteWIPGood, addFinishedGood, rawMaterials, accounts, addAccount, addLedgerEntry, activeOrg } = useStore()
-  const formatCurrency = getFormatCurrency(activeOrg?.currency)
+  const { wipGoods, addWIPGood } = useStore()
+  const formatCurrency = getFormatCurrency()
   
   const [isNewOpen, setIsNewOpen] = useState(false)
   const [newWipName, setNewWipName] = useState("")
@@ -579,8 +571,8 @@ function WIPTab() {
 }
 
 function WIPRow({ wip }: { wip: WIPGood }) {
-  const { updateWIPGood, addFinishedGood, deleteWIPGood, accounts, addAccount, addLedgerEntry, rawMaterials, updateRawMaterial, activeOrg } = useStore()
-  const formatCurrency = getFormatCurrency(activeOrg?.currency)
+  const { updateWIPGood, addFinishedGood, deleteWIPGood, accounts, addAccount, addLedgerEntry, rawMaterials, updateRawMaterial } = useStore()
+  const formatCurrency = getFormatCurrency()
   const [expanded, setExpanded] = useState(false)
 
   // Add RM state
@@ -1030,8 +1022,8 @@ function WIPRow({ wip }: { wip: WIPGood }) {
 // FINISHED GOODS TAB
 // -------------------------------------------------------------------------
 function FinishedGoodsTab() {
-  const { finishedGoods, addFinishedGood, deleteFinishedGood, updateFinishedGood, accounts, addAccount, addLedgerEntry, activeOrg } = useStore()
-  const formatCurrency = getFormatCurrency(activeOrg?.currency)
+  const { finishedGoods, addFinishedGood, deleteFinishedGood, updateFinishedGood, accounts, addAccount, addLedgerEntry } = useStore()
+  const formatCurrency = getFormatCurrency()
   
   const [isOpen, setIsOpen] = useState(false)
   

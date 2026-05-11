@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Plus, FileText, Download, Edit2, Eye, MoreHorizontal, CheckCircle, Clock, XCircle, Trash2, Barcode } from "lucide-react"
+import { Search, Plus, FileText, Download, Edit2, MoreHorizontal, CheckCircle, Clock, XCircle, Trash2, Barcode } from "lucide-react"
 import { printBarcodes } from "@/lib/barcode-utils"
 import { exportInvoicePDF } from "@/lib/pdf-service"
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,7 @@ import { useEffect } from "react"
 import { toast } from "sonner"
 
 export function InvoicesPage() {
-  const { invoices, addInvoice, updateInvoice, deleteInvoice, accounts, activeOrg, addAccount, addLedgerEntry, triggerEditInvoiceId, setTriggerEditInvoiceId, finishedGoods, updateFinishedGood, invoicePagination, loadInvoices } = useStore()
+  const { invoices, addInvoice, updateInvoice, deleteInvoice, accounts, activeOrg, addAccount, triggerEditInvoiceId, setTriggerEditInvoiceId, finishedGoods, invoicePagination, loadInvoices } = useStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)

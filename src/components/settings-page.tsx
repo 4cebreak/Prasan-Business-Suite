@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Building, Shield, LogOut, Trash2, Plus, FileText, Package, Save, X } from "lucide-react"
+import { Building, Shield, LogOut, Trash2, FileText, Package, Save, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,15 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+
 
 const settingsSections = [
   { id: "business", label: "Organization", icon: Building },
@@ -39,7 +31,7 @@ const settingsSections = [
 
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState("business")
-  const { activeOrg, activeOrgId, updateOrganization, deleteOrganization, addOrganization, purgeInventory } = useStore()
+  const { activeOrg, activeOrgId, updateOrganization, deleteOrganization, purgeInventory } = useStore()
   const { logout } = useAuth()
 
   // Password state
@@ -88,7 +80,7 @@ export function SettingsPage() {
         state: localState
       })
       toast.success("Organization details updated successfully")
-    } catch (err) {
+    } catch {
       toast.error("Failed to update organization details")
     }
   }

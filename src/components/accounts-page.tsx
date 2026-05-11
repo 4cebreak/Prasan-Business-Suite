@@ -26,7 +26,7 @@ import { cn, formatCurrency as globalFormatCurrency } from "@/lib/utils"
 import { useStore, Account, LedgerEntry } from "@/lib/store"
 import { exportLedgerPDF, splitParty } from "@/lib/pdf-service"
 
-const PAYMENT_MODES = ["Cash", "Bank Transfer", "Cheque", "Google Pay", "NEFT/RTGS"]
+
 
 export function AccountsPage() {
   const { accounts, addAccount, updateAccount, deleteAccount, addLedgerEntry, updateLedgerEntry, deleteLedgerEntry, setTriggerEditInvoiceId, activeOrg } = useStore()
@@ -63,7 +63,7 @@ export function AccountsPage() {
       }
     }, 0)
     return () => clearTimeout(id)
-  }, [selectedAccountId, accounts]) // sync with store changes too
+  }, [selectedAccountId, accounts, selectedAccount]) // sync with store changes too
 
   const hasChanges = JSON.stringify(stagedLedger) !== JSON.stringify(originalLedger)
 
