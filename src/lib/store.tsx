@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback } from "react"
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react"
 import { 
   fetchStoreContext, serverAddAccount, serverUpdateAccount, serverDeleteAccount, 
   serverAddLedgerEntry, serverUpdateLedgerEntry, serverDeleteLedgerEntry, serverAddInvoice, serverUpdateInvoice, serverDeleteInvoice, 
@@ -89,7 +89,7 @@ const StoreContext = createContext<StoreState | undefined>(undefined)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<OrgConfig[]>([])
-  const [activeOrgId, setActiveOrgId] = useState<string>("abc-company")
+  const [activeOrgId, setActiveOrgId] = useState<string>("")
   const [accounts, setAccounts] = useState<Account[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [invoicePagination, setInvoicePagination] = useState({ total: 0, page: 1, pageSize: 20 })
@@ -100,7 +100,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [triggerEditInvoiceId, setTriggerEditInvoiceId] = useState<string | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
-  const hasRestoredOrg = useRef(false)
+  const [isSessionChecked, setIsSessionChecked] = useState(false)
 
   const loadInvoices = useCallback(async (page: number = 1) => {
     try {
@@ -159,12 +159,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         console.error("Migration check failed", e)
       }
 
-      if (!hasRestoredOrg.current) {
-        hasRestoredOrg.current = true
+      if (!isSessionChecked) {
         try {
           const session = await validateSession()
           if (session?.isAuthenticated && session.orgId) {
             setActiveOrgId(session.orgId)
+            setIsSessionChecked(true)
             setIsLoaded(true)
             return
           }
@@ -173,15 +173,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const memoryOrgId = localStorage.getItem("jeans_active_org")
         if (memoryOrgId && memoryOrgId !== activeOrgId) {
           setActiveOrgId(memoryOrgId)
-          return
         }
+        setIsSessionChecked(true)
+        return
       }
       
       await refreshData()
       setIsLoaded(true)
     }
     init()
-  }, [activeOrgId, refreshData])
+  }, [activeOrgId, isSessionChecked, refreshData])
 
   useEffect(() => {
     if (isLoaded) localStorage.setItem("jeans_active_org", activeOrgId)
@@ -299,7 +300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   if (!isLoaded) return null
 
-  const activeOrg = organizations.find(o => o.id === activeOrgId) || organizations[0] || { id: "abc-company", name: "ABC Company" }
+  const activeOrg = organizations.find(o => o.id === activeOrgId) || organizations[0] || { id: "", name: "Loading..." } as OrgConfig
 
   return (
     <StoreContext.Provider value={{ 

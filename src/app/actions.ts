@@ -293,9 +293,46 @@ export async function serverUpdateInvoice(id: string, updates: Partial<Invoice>)
         } : undefined
       }
     })
+    // Re-apply: Inventory decrements for new items
+    if (inv.organization.inventoryEnabled && items) {
+      for (const item of items) {
+        if (item.finishedGoodId) {
+          await tx.finishedGood.update({ where: { id: item.finishedGoodId }, data: { qty: { decrement: item.qty } } })
+        }
+      }
+    }
 
-    // Re-apply logic (Inventory & Ledger) ... similar to addInvoice ...
-    // Note: for brevity I'm skipping the full re-apply here, but you should implement it based on updatedInvoice.
+    // Re-apply: Ledger entry for the updated invoice
+    if (inv.organization.linkInvoicesLedgers && updates.customerName) {
+      const acc = await tx.account.findFirst({ where: { orgId: inv.orgId, name: updates.customerName } })
+      if (acc) {
+        const newGrandTotal = updates.grandTotal !== undefined ? toCents(updates.grandTotal) : inv.grandTotal
+        const newSubtotal = updates.subtotal !== undefined ? toCents(updates.subtotal) : inv.subtotal
+        const newDiscount = updates.discount !== undefined ? toCents(updates.discount) : inv.discount
+        const newTaxes = updates.taxes !== undefined ? toCents(updates.taxes) : inv.taxes
+        const invoiceDate = date ? new Date(date) : inv.date
+
+        const ledger = await tx.ledgerEntry.create({
+          data: {
+            date: invoiceDate,
+            party: updates.customerName,
+            station: updates.city || inv.city || undefined,
+            amount: newSubtotal,
+            discount: newDiscount,
+            taxOrPaid: newTaxes,
+            netAmount: newGrandTotal,
+            items: updates.itemsDescription || inv.itemsDescription || undefined,
+            type: "bill",
+            invoiceId: id,
+            accountId: acc.id
+          }
+        })
+        const balanceImpact = newGrandTotal * (acc.category === "Supplier" ? -1 : 1)
+        await tx.account.update({ where: { id: acc.id }, data: { balance: { increment: balanceImpact } } })
+        await tx.invoice.update({ where: { id }, data: { ledgerEntryId: ledger.id } })
+      }
+    }
+
     return updatedInvoice
   })
 }
@@ -492,7 +529,7 @@ export async function serverDeleteOrganization(id: string) {
 export async function serverLogout() {
   const { cookies } = await import('next/headers')
   const c = await cookies()
-  c.set('session', '', { maxAge: -1 })
+  c.set('jeans_session', '', { maxAge: -1, path: '/' })
 }
 
 export async function serverGetSystemConfig(): Promise<SystemConfig | null> {

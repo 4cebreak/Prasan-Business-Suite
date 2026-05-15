@@ -7,7 +7,6 @@ const globalForPrisma = global as unknown as { prisma: PrismaClient }
 function createPrismaClient() {
   // Use absolute path relative to project root to avoid 'ghost' databases
   const dbPath = path.resolve(process.cwd(), "dev.db")
-  console.log("Initializing Prisma with DB at:", dbPath)
   const adapter = new PrismaBetterSqlite3({ url: dbPath })
 
   return new PrismaClient({ adapter })

@@ -2,36 +2,38 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { decrypt } from "@/lib/session";
 
+const PUBLIC_PATHS = ["/api", "/_next/static", "/_next/image", "/favicon.ico", "/icon", "/apple-icon"];
+
 export async function proxy(req: NextRequest) {
-  // Check for session cookie
+  const { pathname } = req.nextUrl;
+
+  // Skip middleware for static/public assets
+  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  // Validate session cookie
   const cookie = req.cookies.get("jeans_session")?.value;
-  
+
   if (cookie) {
     try {
-      await decrypt(cookie);
+      const payload = await decrypt(cookie);
+      // Session is valid — attach orgId header for downstream use
+      const response = NextResponse.next();
+      response.headers.set("x-org-id", String(payload.orgId || ""));
+      return response;
     } catch {
-      // Invalid session
+      // Invalid/expired session — let the client-side auth handle redirect
+      return NextResponse.next();
     }
   }
 
-  // Redirect to login if not authenticated and trying to access a protected route
-  // However, in this specific app, the UI handles most state.
-  // We primarily want to protect against direct access to data pages if they were separate.
-  // Since it's a SPA-like structure in Next.js, the server actions protection is the most important.
-  
+  // No session cookie — let the client-side AuthProvider handle the login gate
   return NextResponse.next();
 }
 
-// Optional: Configure which paths the middleware runs on
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
     "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };

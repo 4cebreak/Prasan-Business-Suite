@@ -1,19 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import dynamic from "next/dynamic"
 import { Sidebar } from "@/components/sidebar"
 import { Header } from "@/components/header"
 import { DashboardPage } from "@/components/dashboard-page"
 import { AccountsPage } from "@/components/accounts-page"
-import dynamic from "next/dynamic"
-const InvoicesPage = dynamic(() => import('@/components/invoices-page').then(mod => mod.InvoicesPage), { ssr: false })
 import { SettingsPage } from "@/components/settings-page"
-const InventoryPage = dynamic(() => import('@/components/inventory-page').then(mod => mod.InventoryPage), { ssr: false })
+import { BarcodePage } from "@/components/barcode-page"
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { BarcodePage } from "@/components/barcode-page"
+import { useStore } from "@/lib/store"
 
+const InvoicesPage = dynamic(() => import('@/components/invoices-page').then(mod => mod.InvoicesPage), { ssr: false })
+const InventoryPage = dynamic(() => import('@/components/inventory-page').then(mod => mod.InventoryPage), { ssr: false })
 
 const pageConfig = {
   dashboard: {
@@ -47,9 +48,6 @@ const pageConfig = {
     component: BarcodePage,
   },
 }
-
-import { useStore } from "@/lib/store"
-import { useEffect } from "react"
 
 export default function Home() {
   const { activeOrg } = useStore()

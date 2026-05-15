@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 
 const secretKey = process.env.SESSION_SECRET || "jeans-erp-super-secret-key-change-this-in-prod";
 if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
-  console.warn("WARNING: SESSION_SECRET is not set in production. Using default insecure key!");
+  throw new Error("FATAL: SESSION_SECRET environment variable is required in production. Set it in your .env file.");
 }
 const key = new TextEncoder().encode(secretKey);
 

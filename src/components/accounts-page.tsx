@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Search, Plus, Users, ArrowUpRight, ArrowDownRight, Edit2, FileText, Trash2, MoreHorizontal, Filter, Download, CheckCircle2, CheckSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -44,7 +44,7 @@ export function AccountsPage() {
 
   // Ledger state (track by ID to stay in sync with global store)
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
-  const selectedAccount = accounts.find(a => a.id === selectedAccountId) || null
+  const selectedAccount = useMemo(() => accounts.find(a => a.id === selectedAccountId) || null, [accounts, selectedAccountId])
   const [ledgerSearch, setLedgerSearch] = useState("")
   
   // Staged changes for the entire ledger
@@ -63,7 +63,7 @@ export function AccountsPage() {
       }
     }, 0)
     return () => clearTimeout(id)
-  }, [selectedAccountId, accounts, selectedAccount]) // sync with store changes too
+  }, [selectedAccount]) // useMemo ensures stable reference
 
   const hasChanges = JSON.stringify(stagedLedger) !== JSON.stringify(originalLedger)
 

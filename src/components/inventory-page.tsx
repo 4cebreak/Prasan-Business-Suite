@@ -20,7 +20,7 @@ import {
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
-const getFormatCurrency = () => (amount: number) => globalFormatCurrency(amount)
+
 
 const formatPDFCurrency = (amount: number) => {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(amount)
@@ -72,7 +72,7 @@ export function InventoryPage() {
 // -------------------------------------------------------------------------
 function RawMaterialsTab() {
   const { rawMaterials, addRawMaterial, updateRawMaterial, deleteRawMaterial, accounts, addAccount, addLedgerEntry } = useStore()
-  const formatCurrency = getFormatCurrency()
+  const formatCurrency = globalFormatCurrency
   
   const [isOpen, setIsOpen] = useState(false)
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
@@ -445,7 +445,7 @@ function RawMaterialsTab() {
 // -------------------------------------------------------------------------
 function WIPTab() {
   const { wipGoods, addWIPGood } = useStore()
-  const formatCurrency = getFormatCurrency()
+  const formatCurrency = globalFormatCurrency
   
   const [isNewOpen, setIsNewOpen] = useState(false)
   const [newWipName, setNewWipName] = useState("")
@@ -572,7 +572,7 @@ function WIPTab() {
 
 function WIPRow({ wip }: { wip: WIPGood }) {
   const { updateWIPGood, addFinishedGood, deleteWIPGood, accounts, addAccount, addLedgerEntry, rawMaterials, updateRawMaterial } = useStore()
-  const formatCurrency = getFormatCurrency()
+  const formatCurrency = globalFormatCurrency
   const [expanded, setExpanded] = useState(false)
 
   // Add RM state
@@ -1023,7 +1023,7 @@ function WIPRow({ wip }: { wip: WIPGood }) {
 // -------------------------------------------------------------------------
 function FinishedGoodsTab() {
   const { finishedGoods, addFinishedGood, deleteFinishedGood, updateFinishedGood, accounts, addAccount, addLedgerEntry } = useStore()
-  const formatCurrency = getFormatCurrency()
+  const formatCurrency = globalFormatCurrency
   
   const [isOpen, setIsOpen] = useState(false)
   

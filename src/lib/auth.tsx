@@ -49,7 +49,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
     setIsSubmitting(true)
     setError("")
     try {
-      const orgId = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-')
+      const orgId = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now()
       // Password is hashed ON THE SERVER now
       await serverAddOrganization(companyName.trim(), orgId, password, linkInvoices)
       
